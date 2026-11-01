@@ -18,7 +18,11 @@ public static class SteamBridge
     static bool shutDown;                        // after ShutdownSteam (the game exiting): no new helper
     static bool? onWine, onDeck;                 // fixed for the session; asked repeatedly
 
-    static string Call(string command)
+    internal static string Call(string command) { return Call(command, command); }
+
+    // Also used by GalaxyBridge (GOG Galaxy goes through the same helper). shown: what the log records instead of the
+    // command (GalaxyInit carries the game's GOG credentials).
+    internal static string Call(string command, string shown)
     {
         lock (Gate)
         {
@@ -35,14 +39,14 @@ public static class SteamBridge
                     host = Process.Start(start);
                     input = host.StandardInput; input.AutoFlush = true;
                     output = host.StandardOutput;
-                    Log.Write("steam: started helper process " + host.Id);
+                    Log.Write("helper: started process " + host.Id);
                 }
                 input.WriteLine(command);
                 string reply = output.ReadLine();
-                Log.Write("steam: " + command + " -> " + reply);
+                Log.Write("helper: " + shown + " -> " + reply);
                 return reply;
             }
-            catch (Exception ex) { Log.Write("steam: " + command + " failed: " + ex.Message); return null; }
+            catch (Exception ex) { Log.Write("helper: " + shown + " failed: " + ex.Message); return null; }
         }
     }
 

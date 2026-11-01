@@ -45,7 +45,9 @@ cp "$CECIL" "$OUT/"
 OUT64="$HERE/dist/UnderrailFix-64bit"
 mkdir -p "$OUT64/x64"
 cp "$OUT/UnderrailFix.dll" "$CECIL" "$NVORBIS" "$OUT64/"
-mcs -nologo -optimize+ -platform:x86 -out:"$OUT64/UnderrailSteamHost.exe" "$HERE/src/SteamHost/SteamHost.cs"
+# The helper also runs GOG Galaxy for the GOG version: compiled against the game's GalaxyCSharp.dll (loaded from the game
+# folder at run time, only on GOG).
+mcs -nologo -optimize+ -platform:x86 -out:"$OUT64/UnderrailSteamHost.exe" -r:"$GAME/GalaxyCSharp.dll" "$HERE/src/SteamHost/SteamHost.cs"
 [ -f "$HERE/lib/fna/FNA.dll" ] || "$HERE/tools/fetch-fna.sh"
 cp "$HERE/lib/fna/FNA.dll" "$OUT64/"
 cp "$HERE"/lib/fna/x64/*.dll "$OUT64/x64/"

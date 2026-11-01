@@ -448,6 +448,13 @@ static class Patcher
         Expect("SFML music calls", calls, 10);
         if (steam == 0) throw new Exception("this game version isn't supported (no Steam calls found)");
 
+        // GOG Galaxy (enu creates the Galaxy manager axn when Galaxy.dll is there): GalaxyBridge instead, which runs Galaxy
+        // in the 32-bit helper (GalaxyCSharp's natives are 32-bit only).
+        var galaxy = module.GetType("enu").Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions
+            .Where(i => i.OpCode == OpCodes.Newobj && ((MethodReference)i.Operand).DeclaringType.Name == "axn")).ToList();
+        Expect("Galaxy manager", galaxy.Count, 1);
+        foreach (var i in galaxy) i.Operand = module.ImportReference(fix.GetType("GalaxyBridge").Methods.Single(m => m.IsConstructor && !m.IsStatic));
+
         // tb uses the game window as a WinForms Form: (Form)Control.FromHandle(Window.Handle), then Form members. The
         // handle read is dropped and the GameWindow goes to FnaWindow.Form; the Form members to FnaWindow.
         var tb = module.GetType("tb");

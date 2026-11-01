@@ -226,6 +226,7 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 |---|---|---|
 | SFML `Music` uses in `bxt` (10) | `FixMusic.*` | NVorbis + DynamicSoundEffectInstance in 64-bit |
 | `efl.SteamHelper_*` (11 call sites) | `SteamBridge.*` | 32-bit helper process |
+| `enu`: `new axn()` (GOG Galaxy manager, only created when Galaxy.dll exists) | `GalaxyBridge` (implements `acv`) | Galaxy run by the same helper |
 | `tb`: `(Form)Control.FromHandle(Window.Handle)` (4) + Form members | `FnaWindow.*` | FNA's window is no WinForms Form |
 | end of `tb.lg()` | `FnaWindow.Hwnd` | SDL window -> HWND for `bso`'s ClientToScreen |
 | start of `e6e.av3` / end of `e6e.av5` | `FnaMode.SaveTypeName` / `SavedName` | saves read any XNA/FNA name, write XNA names |
@@ -309,6 +310,15 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
     over stdin/stdout. `IsRunningOnWine`/`IsOnSteamDeck` aren't exported by the game's SteamHelper.dll
     (EntryPointNotFound, which the stock game treats as false too); they're cached. No helper is restarted after
     `ShutdownSteam`.
+  - GOG: one exe for both stores; `enu` registers the Galaxy manager `axn` (`acv`) if `Galaxy.dll` exists.
+    GalaxyCSharp.dll is AnyCPU but its natives (`Galaxy.dll`, `GalaxyCSharpGlue.dll`) are 32-bit, so in 64-bit
+    `axn` would fail to init (caught; retried every 5 min) and GOG achievements wouldn't unlock. The patch creates
+    `GalaxyBridge` instead, which sends `Galaxy*` commands to the helper; the helper runs Galaxy like `axn` (sign-in,
+    stats retrieved before any change, Store after each) on one thread that calls `ProcessData` every 20 ms. The
+    game's Galaxy client ID/secret are read at run time from the first two `ldstr`s in `axn.sv` and passed over the
+    pipe (redacted in the log). **Never copy the game's credentials into this repo.** Tested: the strings are found
+    (17-digit ID, 64-hex secret), and the helper without Galaxy answers errors/0 and exits cleanly. Not tested on a
+    GOG copy.
   - Saves/config.dat: see the rule on files the game writes. `chunk0.dat` still names our FNA as the *library* of
     types the binder names by code ("X" names): .NET writes that itself, the stock game does the same with
     `WineMono.FNA` under Proton, and the reader ignores it (checked: such a save loads in the stock game).

@@ -139,7 +139,7 @@ The game is a 32-bit program, which limits how much memory it can use. The 64-bi
 
 - **Graphics, sound and input** use [FNA](https://fna-xna.github.io/), an open-source reimplementation of XNA (the 32-bit-only framework the game is made with). It's what the game already runs on under Proton. It uses Direct3D 11, which also avoids the shader flicker described under Linux below, without a launch option.
 - **Music** is played by a built-in Ogg decoder ([NVorbis](https://github.com/NVorbis/NVorbis)), since the game's 32-bit music library can't load in a 64-bit process.
-- **Steam** (achievements, the overlay keyboard) goes through a small 32-bit helper, `UnderrailSteamHost.exe`, which loads the game's own Steam library.
+- **Steam and GOG Galaxy** (achievements, the overlay keyboard) go through a small 32-bit helper, `UnderrailSteamHost.exe`, which loads the game's own Steam or Galaxy libraries. The game starts and stops it by itself; there's nothing extra to run. (GOG achievements in 64-bit mode haven't been tested on a GOG copy yet.)
 
 Install it like the standard download, but run `UnderrailFix-Patcher-64bit.exe` (Windows) or `./underrailfix-patcher-64bit` (Linux). Besides `underrail.exe` it changes a header flag in the game's `sfmlnet-audio-2.dll` and `sfmlnet-window-2.dll` (backed up as `.backup`), and adds `FNA.dll`, the `x64` folder, `UnderrailFix64.dll`, `NVorbis.dll` and `UnderrailSteamHost.exe`.
 
