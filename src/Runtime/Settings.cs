@@ -31,6 +31,11 @@ ResolutionFix=1
 Width=native
 Height=native
 
+; With ResolutionFix=1, save screenshots on screens bigger than 2048 pixels (the game only fits those in its
+; picture by cropping: it keeps just the top-left 2048 pixels of the screen):
+; 1 = what a 1920x1080 screen would show, the 16:9 area at the centre of the screen at 1920x1080; 0 = the game's own.
+SaveScreenshots=1
+
 ; 1 = zoom as a 1080p screen would need it for the same view, on every screen: the world looks the same size at
 ;     any resolution, and the game's zoom indicator shows the same numbers as on a 1920x1080 screen.
 ; 0 = the game's own zoom, which depends on the resolution (1x to 2x, or 3x on screens wider than 1920).
@@ -147,6 +152,7 @@ Log=0
 
     public static bool ResolutionFix => Flag("ResolutionFix");
     public static bool ZoomFix => Flag("ZoomFix");
+    public static bool SaveScreenshots => Flag("SaveScreenshots");
     public static int? Width => Number("Width");
     public static int? Height => Number("Height");
     public static int ZoomMin => Number("ZoomMin") ?? DefaultZoomMin;

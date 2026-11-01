@@ -2,13 +2,14 @@
 
 Display fixes for UnderRail, for ultrawide and other resolutions the game doesn't list:
 
-- **Resolution fix:** the resolution list comes from the modes your monitor reports, so 5120x1440, 3440x1440, 2560x1080 and the rest are all selectable. Long lists scroll, and they stay inside the options window. The resolution is stored in `UnderrailFix.ini` (default: your desktop resolution), and the game's `config.dat` is left alone.
+- **Resolution fix:** the resolution list comes from the modes your monitor reports, so 5120x1440, 3440x1440, 2560x1080 and the rest are all selectable. Long lists scroll, and they stay inside the options window. The resolution is stored in `UnderrailFix.ini` (default: your desktop resolution), and the game's `config.dat` is left alone. Save screenshots on screens bigger than 2048 pixels show the view instead of a cropped corner.
 - **Insets:** the HUD and menus can be moved in from the screen's edges into a centred area, while the world still fills the screen.
 - **Interface scale:** the interface can be scaled beyond the game's largest Interface Size, automatically on screens above 4K.
 - **Zoom fix:** the world is the same size on every screen, as it is at 1080p, with more room to zoom out. The zoom indicator shows the same numbers as at 1080p.
 - **Frame rate (off by default, not tested thoroughly yet):** no more 60 FPS cap; runs at your monitor's refresh rate, with an optional cap.
 - **Menu backgrounds:** optionally show the whole menu art instead of the game's crop.
 - **In-game settings:** an **Options → Fixes** tab; changes apply without restarting.
+- **Experimental 64-bit** (separate download): runs the game as a 64-bit process. See [below](#experimental-64-bit).
 
 It works by patching your own `underrail.exe`, after backing it up. No launch options and no other game files are changed.
 
@@ -46,6 +47,7 @@ All settings are in `UnderrailFix.ini` in the game folder, created on the first 
 ResolutionFix=1   ; 1 = resolution list from your monitor, resolution kept here; 0 = the game's list and config.dat
 Width=native      ; native = your desktop's width, or a number of pixels (the in-game menu writes these)
 Height=native
+SaveScreenshots=1 ; save screenshots on screens over 2048 px: 1 = the 1080p view from the screen's centre; 0 = the game's own
 ZoomFix=1         ; 1 = zoom as on a 1080p screen, same on every screen; 0 = the game's own zoom
 ZoomDefault=150   ; starting zoom, also used with Allow Zoom off (the game's 1080p default)
 ZoomMin=75        ; how far Allow Zoom (SHIFT+wheel) can zoom out (the game stops at 100)
@@ -60,6 +62,10 @@ FrameRateFix=0    ; 1 = no 60 FPS cap (off by default: not tested thoroughly yet
 MaxFps=0          ; with FrameRateFix=1: 0 = no cap (with VSync: your refresh rate), or a cap such as 120
 Log=0             ; 1 = write UnderrailFix.log (for bug reports)
 ```
+
+### Save screenshots
+
+Each save has a screenshot, shown in the load menu. On screens bigger than 2048 pixels the game means to shrink the screen to fit 2048, but only the top-left corner ends up in the picture. With `SaveScreenshots=1` (the default, with `ResolutionFix=1`; also **Options → Fixes → Save screenshots**) the screenshot shows what a 1920x1080 screen would show: the 16:9 area at the centre of your screen, at 1920x1080. `0` keeps the game's own. Screens up to 2048 pixels aren't affected either way.
 
 ### Zoom
 
@@ -120,9 +126,23 @@ The game runs at a fixed 60 updates and frames per second (XNA's default), whate
 
 XNA games don't tell Windows they can handle high-DPI screens, so with display scaling on (e.g. 150% in Windows' display settings) Windows may stretch the game or report a smaller resolution. `DpiAware=1` (the default) fixes that. It has no effect on Linux/Proton, which doesn't need it.
 
+## Experimental 64-bit
+
+> **Largely untested:** played under Proton (Linux) only, not yet on Windows. Keep a backup of your saves, and please report anything that behaves differently.
+
+The game is a 32-bit program, which limits how much memory it can use. The 64-bit download (`UnderRailFixes-64bit-experimental-X.Y.Z.zip`) runs it as a 64-bit process instead, with all the fixes above:
+
+- **Graphics, sound and input** use [FNA](https://fna-xna.github.io/), an open-source reimplementation of XNA (the 32-bit-only framework the game is made with). It's what the game already runs on under Proton. It uses Direct3D 11, which also avoids the shader flicker described under Linux below, without a launch option.
+- **Music** is played by a built-in Ogg decoder ([NVorbis](https://github.com/NVorbis/NVorbis)), since the game's 32-bit music library can't load in a 64-bit process.
+- **Steam** (achievements, the overlay keyboard) goes through a small 32-bit helper, `UnderrailSteamHost.exe`, which loads the game's own Steam library.
+
+Install it like the standard download, but run `UnderrailFix-Patcher-64bit.exe` (Windows) or `./underrailfix-patcher-64bit` (Linux). Besides `underrail.exe` it changes a header flag in the game's `sfmlnet-audio-2.dll` and `sfmlnet-window-2.dll` (backed up as `.backup`), and adds `FNA.dll`, the `x64` folder, `UnderrailFix64.dll`, `NVorbis.dll` and `UnderrailSteamHost.exe`.
+
+To go back, run the standard patcher (the normal fixes, 32-bit again), or uninstall as below; both put the `sfmlnet` DLLs back. Saves and settings made in 64-bit mode stay readable by the normal game. Windows needs a 64-bit Windows with .NET Framework 4 (built in).
+
 ## Uninstall
 
-Run the patcher with `--uninstall` (on Windows, from a command prompt: `UnderrailFix-Patcher.exe --uninstall`), or copy `underrail.exe.backup` over `underrail.exe`. If the game has updated since, the exe is already the original and the patcher just removes the outdated backup. Then delete `UnderrailFix.dll`, `UnderrailFix.ini`, `UnderrailFix.log` and the patcher files. `config.dat` only ever contains values the unmodified game understands, so the game keeps working afterwards.
+Run the patcher with `--uninstall` (on Windows, from a command prompt: `UnderrailFix-Patcher.exe --uninstall`), or copy `underrail.exe.backup` over `underrail.exe`. If the game has updated since, the exe is already the original and the patcher just removes the outdated backup. Then delete `UnderrailFix.dll`, `UnderrailFix.ini`, `UnderrailFix.log` and the patcher files (and, after the 64-bit patcher, `UnderrailFix64.dll`, `FNA.dll`, `NVorbis.dll`, `UnderrailSteamHost.exe` and the `x64` folder). `config.dat` only ever contains values the unmodified game understands, so the game keeps working afterwards.
 
 ## Notes for Linux (Proton)
 
@@ -139,4 +159,4 @@ See [AGENTS.md](AGENTS.md) for how the patcher works, how to build and test it, 
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The release also contains Mono.Cecil (MIT) and, in the Linux patcher, the Mono runtime (MIT).
+MIT, see [LICENSE](LICENSE). The release also contains Mono.Cecil (MIT) and, in the Linux patcher, the Mono runtime (MIT). The 64-bit download also contains FNA and NVorbis (Ms-PL), and FNA3D, FAudio and SDL3 (zlib); `THIRD-PARTY-NOTICES.txt` in each download has the full texts.

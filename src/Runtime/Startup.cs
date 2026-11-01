@@ -18,6 +18,8 @@ public static class FixStartup
             try { MessageBox(IntPtr.Zero, message, "UnderrailFix", 0x10); } catch { }
             Environment.Exit(1);
         }
+        try { FnaMode.Startup(); }
+        catch (Exception ex) { Log.Write("startup (FNA mode): " + ex.Message); }
         try
         {
             if (FixSettings.DpiAware) DpiAware();

@@ -14,7 +14,7 @@ Fixes (README.md has the player-facing description):
 
 | Fix | ini | What |
 |---|---|---|
-| Resolution | `ResolutionFix`, `Width`, `Height` | resolution list from the monitor's modes; resolution kept in the ini (default native), config.dat keeps a vanilla value; long dropdowns scroll; no odd aspect labels |
+| Resolution | `ResolutionFix`, `Width`, `Height`, `SaveScreenshots` | resolution list from the monitor's modes; resolution kept in the ini (default native), config.dat keeps a vanilla value; long dropdowns scroll; no odd aspect labels; save screenshots above 2048 px show the 1080p view instead of the stock top-left crop |
 | Zoom | `ZoomFix`, `ZoomDefault`, `ZoomMin`, `ZoomMax` | zoom as a 1080p screen would need it for the same view (numbers match the stock 1080p indicator: start 150, 100-200), wider limits, steps scaled |
 | Interface | `UiScaleFix`, `UiScale`, `UiInsetX`, `UiInsetY` | whole-UI scale (auto = whole multiples of the shorter side / 2160), insets that centre the UI while the world stays full-screen |
 | Menu backgrounds | `BackgroundFit` | 0 = the game's crop; 1 = whole image, letterboxed (backgrounds ignore insets either way) |
@@ -24,6 +24,14 @@ Fixes (README.md has the player-facing description):
 
 In game: **Options -> Fixes** tab with a group per enabled fix; applies on Accept; scale/inset changes get a
 15 s keep/revert countdown (the game's own dialog).
+
+**How fixes are organised (keep to this when adding one):**
+- Fixes come in groups (Resolution, Interface, Zoom, Frame rate...). Every group has one on/off switch in the ini
+  (`ResolutionFix`, `UiScaleFix`, `ZoomFix`, `FrameRateFix`) that turns the whole group off: with it at 0 the game
+  behaves as stock for everything in that group, whatever the group's other settings say.
+- A group's other settings only apply while its switch is on, and are written under it in the ini.
+- Any option that can be set in game can appear in the Fixes tab, under its group's heading; the group is only shown
+  while its switch is on. The switches themselves stay ini-only.
 
 ### Why a patcher (alternatives that were tried and fail)
 
@@ -43,16 +51,30 @@ release.sh               the only way to make a release (see Releasing)
 src/Release/             licence texts shipped in the release zip
 tools/check-release.sh   automated patcher checks (release.sh runs them)
 src/Runtime/*.cs         UnderrailFix.dll: everything the patched game calls
-src/Installer/*.cs       UnderrailFix-Patcher.exe: backup + Cecil patches + uninstall
+src/Installer/*.cs       UnderrailFix-Patcher.exe: backup + Cecil patches + uninstall (and, built with
+                         EXPERIMENTAL_64BIT, UnderrailFix-Patcher-64bit.exe)
 src/Build/Retarget.cs    build step, see "XNA type identity"
 src/Build/GameVersion.cs, ListHooks.cs   release helpers
 src/Bundle/mono.config   dllmap for the bundled Linux patcher
 src/SteamHost/           UnderrailSteamHost.exe, the 32-bit Steam helper for experimental 64-bit
-lib/                     NVorbis.dll (fetched by build.sh, not committed)
+lib/                     NVorbis.dll (fetched by build.sh), fna/ (tools/fetch-fna.sh); not committed
+tools/fetch-fna.sh       FNA built from its release + the pinned official native libraries + their licences
 tools/gamescope-test.sh  run the game at a virtual resolution (8K, portrait...)
 ```
 
 Never commit decompiled game code or game files (`.gitignore` blocks exe/dll/xnb).
+
+**Every file the original game can write must always stay readable by the original, unpatched game**, whatever mode
+the mod runs in: saves, config.dat, and anything else the stock game itself writes. (The mod's own files, such as
+UnderrailFix.ini/.log, are not meant here.) Players uninstall,
+Steam restores the stock exe after updates, and the files are shared between Windows, Proton and the experimental
+64-bit mode (same Documents folder). The mod keeps its own state in its own files (UnderrailFix.ini); config.dat
+keeps vanilla values (ResolutionStore). Saves and config.dat are BinaryFormatter data whose type names include the
+assembly that wrote them; the game's binder (`dds` -> `e6e.av3` read / `e6e.av5` write) resolves them, and the stock
+one only understands `FNA`/`WineMono.FNA` names for Point, Vector2, Vector3, Color and Matrix. Key bindings (`Keys`,
+in config.dat and global.dat) are not among them. So anything that changes which assembly the game's types come from
+must write the stock XNA 4.0 names (FNA mode does this in `FnaMode.SavedName`). After a change in this area, check
+the files with a script that lists the assembly names in the gzip'd data.
 
 ### Building (Linux)
 
@@ -62,19 +84,23 @@ the Steam copy, or its `.backup`), and any Proton install (for `WineMono.FNA.dll
 
 Output `dist/UnderrailFix/`: `UnderrailFix.dll`, `UnderrailFix-Patcher.exe` + `Mono.Cecil.dll` (Windows, .NET
 Framework 4), `underrailfix-patcher` + `linux/` (Linux: mkbundle'd Mono, needs glibc >= 2.38), README.md.
+`dist/UnderrailFix-64bit/`: the same with the `-64bit` patchers, plus `UnderrailFix64.dll` (made by
+`Retarget.cs --fna`), `FNA.dll`, `x64/` (FNA3D, FAudio, SDL3), `NVorbis.dll`, `UnderrailSteamHost.exe`.
 
 ### Releasing
 
 Always through `./release.sh X.Y.Z "description"` (or `-F notes.md`), never by hand, so every release is made the
 same way. It refuses to run unless on `main`, clean, in sync with origin, with a new version and UnderRail closed.
 Then it stamps `FixVersion.Value` (src/Runtime/Version.cs; committed only after everything passed), builds from
-scratch, runs `tools/check-release.sh`, packages `UnderRailFixes-X.Y.Z.zip` (dist + LICENSE.txt +
-THIRD-PARTY-NOTICES.txt from src/Release/), writes the notes (description + game version read from the exe by
+scratch, runs `tools/check-release.sh`, packages `UnderRailFixes-X.Y.Z.zip` and
+`UnderRailFixes-64bit-experimental-X.Y.Z.zip` (each dist folder + LICENSE.txt + THIRD-PARTY-NOTICES.txt from
+src/Release/ and lib/fna/licenses/), writes the notes (description + game version read from the exe by
 src/Build/GameVersion.cs + Steam build + install steps + SHA-256), tags `vX.Y.Z`, pushes and runs `gh release create`.
 
-Release lines: `main` holds everything, including unreleased work (experimental 64-bit). A fix for the current
-release line goes on `main` first, then is cherry-picked onto `release/X.Y` (branched from the last tag) and released
-from there, so unreleased work stays out: v1.0.2 was released from `release/1.0` (v1.0.1 + the insets clip fix).
+Release lines: `main` holds everything. When `main` has work that shouldn't ship yet, a fix for the current release
+line goes on `main` first, then is cherry-picked onto `release/X.Y` (branched from the last tag) and released from
+there: v1.0.2 was released from `release/1.0` (v1.0.1 + the insets clip fix). Since v1.0.3 the experimental 64-bit
+mode ships as its own download, so releases are made from `main` again.
 `release.sh` accepts `main` and `release/*`.
 
 `tools/check-release.sh` (also usable after any `./build.sh`) works on a temporary copy of the game folder: the Linux
@@ -190,6 +216,19 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 | `czo.a(esj)` -> `bg1` (start / return) | `BackgroundSize` / `BackgroundPlace` | menu backgrounds ignore insets; `BackgroundFit=1` shows the whole image (letterboxed) |
 | `bg1.iv` first Rectangle (draw target) | `BackgroundDraw` | the picture moves, not the control: the main menu panel is a **child** of the background |
 | end of `t1.h` / `t1.d` / `d6f.a(ls)` | `UnderrailOptions.AddTab/Save/Applied` | Fixes tab, save, live apply + confirm |
+| `tb.Draw` `ldc.i4 2048` (x2), `stfld x` | `SaveScreenshot.Limit` / `Shrink` | save screenshot rendered full size, then the 1080p view (the stock code crops to the top-left 2048 px) |
+
+64-bit patcher only (`Patch64`):
+
+| Game | Hook | Purpose |
+|---|---|---|
+| SFML `Music` uses in `bxt` (10) | `FixMusic.*` | NVorbis + DynamicSoundEffectInstance in 64-bit |
+| `efl.SteamHelper_*` (11 call sites) | `SteamBridge.*` | 32-bit helper process |
+| `tb`: `(Form)Control.FromHandle(Window.Handle)` (4) + Form members | `FnaWindow.*` | FNA's window is no WinForms Form |
+| end of `tb.lg()` | `FnaWindow.Hwnd` | SDL window -> HWND for `bso`'s ClientToScreen |
+| start of `e6e.av3` / end of `e6e.av5` | `FnaMode.SaveTypeName` / `SavedName` | saves read any XNA/FNA name, write XNA names |
+| `be3` (game formatter) `Assembly.FullName` / `Type.FullName` | `FnaMode.WrittenAssembly` / `WrittenTypeName` | same for its fallback naming |
+| all type references | (Cecil) `ToFna` | XNA 4.0 assemblies -> FNA |
 
 ## Traps (each of these cost time)
 
@@ -208,6 +247,18 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 - Under zsh, `$VAR` with spaces doesn't word-split; use bash for test loops.
 - **Never `pkill -f` a pattern that appears in your own command line**: it kills your shell. Kill by PID.
 - Process names are cut to 15 chars (`underrailfix.ex`).
+- **Never look XNA types up by name** (`Type.GetType("...GraphicsAdapter, Microsoft.Xna.Framework.Graphics...")`):
+  in the 64-bit FNA process that loads real XNA (Windows) or Wine Mono's second FNA and SDL (Proton). Use `typeof`;
+  the build points the reference at the right assembly for each download.
+- **Arch's Mono `mcs` puts some types in mscorlib that .NET Framework keeps elsewhere** (`Queue<T>` is in System.dll).
+  FNA built with plain `mcs` failed on Wine Mono (TypeLoadException) and would on .NET; `fetch-fna.sh` builds it
+  against `/usr/lib/mono/4.8-api`. Our own DLLs happen to be fine; check new code with a reference-mscorlib diff if
+  in doubt.
+- Cecil can't rewrite an assembly inside the bundled Linux patcher when that needs resolving mscorlib (e.g. enum
+  constants): it has no mscorlib on disk. Do such rewrites at build time (that's why `UnderrailFix64.dll` is built,
+  not made by the patcher).
+- The test copy and the Steam game share one Proton prefix, so **a test build writes the player's real config.dat
+  and saves**. Check what a change writes before testing it there (see the rule on files the game writes).
 
 ## Testing
 
@@ -228,12 +279,16 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 
 ## Open ideas
 
-- **64-bit (Proton/Wine Mono only; experimental, `--experimental-64bit` patcher switch, not in releases yet):**
-  - Microsoft XNA is 32-bit only, so this can never work on Windows; under Proton, Wine starts an IL-only exe without
-    32BITREQUIRED as a 64-bit process and Wine Mono's 64-bit FNA handles graphics and sound effects.
-  - The switch clears 32BITREQUIRED on underrail.exe (Cecil) and, by flipping the CLI header flag bytes in place
-    (`ClearClr32Bit`; strong names aren't checked by Mono), on the game's `sfmlnet-audio-2.dll`/`sfmlnet-window-2.dll`
-    (backed up to `.backup`, restored by `--uninstall`).
+- **64-bit (experimental, its own download since v1.0.3):** see the hooks above. How it works:
+  - Microsoft XNA is 32-bit only, so the 64-bit patcher points underrail.exe (Cecil `ToFna`) and a copy of the runtime
+    (`UnderrailFix64.dll`, assembly `UnderrailFix64`, made at build time) at our `FNA.dll` (FNA 26.08, the version
+    Wine Mono 11.3 ships, built by `tools/fetch-fna.sh`). The same files run on Windows (.NET Framework) and under
+    Proton (Wine Mono; Wine Mono's own XNA remapping is then never used). `FnaMode.Startup` adds `x64\` to the DLL
+    search path (natives can't sit in the game folder: a 32-bit Wine Mono FNA would load them) and sets
+    `FNA3D_FORCE_DRIVER=D3D11` unless set (the SDL_GPU flicker, FNA3D#274).
+  - It clears 32BITREQUIRED on underrail.exe (Cecil) and, by flipping the CLI header flag bytes in place
+    (`ClearClr32Bit`; strong names aren't checked), on the game's `sfmlnet-audio-2.dll`/`sfmlnet-window-2.dll`
+    (backed up to `.backup`, restored by `--uninstall` and by the standard patcher).
   - SFML is only used for streamed music (`bxt`: Music ctor/Loop/Volume/Pitch/Status/Play/Stop/Dispose, 10 calls).
     The patch turns bxt's Music field into object and sends the calls to `FixMusic` (Music.cs): real SFML in a 32-bit
     process, otherwise `OggMusic` = NVorbis 0.8.6 (Ms-PL, no deps; fetched by build.sh, hash-checked) decoding the
@@ -247,9 +302,13 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
     over stdin/stdout. `IsRunningOnWine`/`IsOnSteamDeck` aren't exported by the game's SteamHelper.dll
     (EntryPointNotFound, which the stock game treats as false too); they're cached. No helper is restarted after
     `ShutdownSteam`.
-  - Tested in a test copy (`~/underrail-x64` style: game files copied, `data` symlinked): 64-bit process, InitSteam
-    through the helper, main menu music audible, clean exit. Not yet: area music changes, achievements, long sessions.
-  - Still to do before releasing it: an ini/`Use64Bit` switch or patcher option for players, README, notices.
+  - Saves/config.dat: see the rule on files the game writes. `chunk0.dat` still names our FNA as the *library* of
+    types the binder names by code ("X" names): .NET writes that itself, the stock game does the same with
+    `WineMono.FNA` under Proton, and the reader ignores it (checked: such a save loads in the stock game).
+  - Tested under Proton (test copy `~/underrail-x64`: game files copied, `data` symlinked): 64-bit process on our FNA
+    only, D3D11, menu and area music, master volume, save/load, saves and config.dat loading in the stock game,
+    save screenshots, clean exit. Not yet: real Windows / Microsoft's .NET (a Wine prefix with .NET 4.8 would be the
+    closest stand-in), display mode switching and right-drag in FNA mode, achievements, long sessions.
 - Sharper scaled text: re-render the bitmap fonts from their original TTFs at the scaled size; UI art would need
   upscaling (it's painted, not vector).
 - Naming: rename files/assembly to UnderRailFixes. The patcher detects a patched exe by its reference to the

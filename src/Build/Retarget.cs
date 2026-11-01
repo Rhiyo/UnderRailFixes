@@ -2,6 +2,8 @@
 // references at the XNA 4.0 assembly the game references that type from, so the DLL binds the way underrail.exe
 // does: through Wine Mono's XNA facades on Linux, or to Microsoft XNA on Windows.
 // Usage: mono Retarget.exe <UnderrailFix.dll> <underrail.exe>
+// Experimental 64-bit: mono Retarget.exe --fna <UnderrailFix.dll> <FNA.dll> <UnderrailFix64.dll> writes the copy the
+// 64-bit patch uses: assembly UnderrailFix64, every XNA type reference pointed at FNA (which has them all, same names).
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -12,6 +14,7 @@ static class Retarget
 {
     static int Main(string[] args)
     {
+        if (args[0] == "--fna") return ToFna(args[1], args[2], args[3]);
         var game = ModuleDefinition.ReadModule(args[1]);
         var scopes = new Dictionary<string, AssemblyNameReference>();
         foreach (var t in game.GetTypeReferences())
@@ -43,6 +46,23 @@ static class Retarget
         foreach (var r in dll.AssemblyReferences.Where(r => r.Name.StartsWith("WineMono.FNA")).ToList()) dll.AssemblyReferences.Remove(r);
         dll.Write(args[0]);
         Console.WriteLine("XNA references: " + string.Join(", ", dll.AssemblyReferences.Where(r => r.Name.StartsWith("Microsoft.Xna")).Select(r => r.Name)));
+        return 0;
+    }
+
+    static int ToFna(string input, string fnaPath, string output)
+    {
+        var fna = AssemblyNameReference.Parse(ModuleDefinition.ReadModule(fnaPath).Assembly.FullName);
+        var asm = AssemblyDefinition.ReadAssembly(new MemoryStream(File.ReadAllBytes(input)));
+        asm.Name.Name = "UnderrailFix64";
+        asm.MainModule.Name = Path.GetFileName(output);
+        var module = asm.MainModule;
+        var reference = new AssemblyNameReference(fna.Name, fna.Version) { PublicKeyToken = fna.PublicKeyToken, Culture = fna.Culture };
+        module.AssemblyReferences.Add(reference);
+        foreach (var t in module.GetTypeReferences())
+            if (t.Scope is AssemblyNameReference a && a.Name.StartsWith("Microsoft.Xna.Framework")) t.Scope = reference;
+        foreach (var r in module.AssemblyReferences.Where(r => r.Name.StartsWith("Microsoft.Xna.Framework")).ToList()) module.AssemblyReferences.Remove(r);
+        asm.Write(output);
+        Console.WriteLine(Path.GetFileName(output) + ": XNA references -> " + fna.FullName);
         return 0;
     }
 }

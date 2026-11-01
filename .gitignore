@@ -5,3 +5,7 @@ dist/
 *.exe
 *.dll
 *.xnb
+# Fetched by build.sh / tools/fetch-fna.sh (NVorbis, FNA), not committed.
+lib/
+# Local tool state.
+.serena/

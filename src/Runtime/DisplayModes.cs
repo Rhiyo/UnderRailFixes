@@ -14,12 +14,13 @@ public static class UnderrailDisplayModes
 {
     const int MinWidth = 1024, MinHeight = 720;     // smallest built-in resolutions are 1024x768 and 1280x720
     static readonly object Gate = new object();
-    // Looked up through the stable XNA 4.0 facade (as the game does), not FNA's versioned implementation assembly.
-    internal const string AdapterTypeName = "Microsoft.Xna.Framework.Graphics.GraphicsAdapter, Microsoft.Xna.Framework.Graphics, Version=4.0.0.0, Culture=neutral, PublicKeyToken=842cf8be1de50553";
+    // A type reference, not a name: the build points it at the game's XNA Graphics assembly, and the 64-bit copy at FNA
+    // (a name would load XNA, or under Proton Wine Mono's second FNA, in a 64-bit FNA process).
+    internal static readonly Type AdapterType = typeof(Microsoft.Xna.Framework.Graphics.GraphicsAdapter);
 
     static IEnumerable<KeyValuePair<int, int>> ReadModes()
     {
-        Type t = Type.GetType(AdapterTypeName, true);
+        Type t = AdapterType;
         object adapter = t.GetProperty("DefaultAdapter", BindingFlags.Public | BindingFlags.Static).GetValue(null, null);
         var modes = (IEnumerable)t.GetProperty("SupportedDisplayModes").GetValue(adapter, null);
         foreach (object m in modes)
@@ -55,7 +56,7 @@ public static class UnderrailDisplayModes
         w = h = 0;
         try
         {
-            Type t = Type.GetType(AdapterTypeName, true);
+            Type t = AdapterType;
             object adapter = t.GetProperty("DefaultAdapter", BindingFlags.Public | BindingFlags.Static).GetValue(null, null);
             object mode = t.GetProperty("CurrentDisplayMode").GetValue(adapter, null);
             w = (int)mode.GetType().GetProperty("Width").GetValue(mode, null);
@@ -311,7 +312,7 @@ public static class UnderrailDropdownScroll
         int h = H(c.Size);
         try
         {
-            Type t = Type.GetType(UnderrailDisplayModes.AdapterTypeName, true);
+            Type t = UnderrailDisplayModes.AdapterType;
             object adapter = t.GetProperty("DefaultAdapter", BindingFlags.Public | BindingFlags.Static).GetValue(null, null);
             object mode = t.GetProperty("CurrentDisplayMode").GetValue(adapter, null);
             int screen = (int)mode.GetType().GetProperty("Height").GetValue(mode, null);

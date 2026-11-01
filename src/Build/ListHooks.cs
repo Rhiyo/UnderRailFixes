@@ -11,7 +11,7 @@ static class ListHooks
     {
         var module = ModuleDefinition.ReadModule(args[0]);
         var hooks = module.GetTypes().SelectMany(t => t.Methods).Where(m => m.HasBody).SelectMany(m => m.Body.Instructions)
-            .Select(i => i.Operand as MethodReference).Where(r => r != null && r.DeclaringType.Scope.Name == "UnderrailFix")
+            .Select(i => i.Operand as MethodReference).Where(r => r != null && (r.DeclaringType.Scope.Name == "UnderrailFix" || r.DeclaringType.Scope.Name == "UnderrailFix64"))
             .Select(r => r.DeclaringType.Name + "." + r.Name).Distinct().OrderBy(n => n, StringComparer.Ordinal);
         foreach (var h in hooks) Console.WriteLine(h);
         return 0;

@@ -25,7 +25,7 @@ enum StyleOnly { A }
 public static class UnderrailOptions
 {
     const string TabName = "Fixes";
-    sealed class Rows { public aw9 Scale, InsetX, InsetY, Background, ZoomDefault, ZoomMin, ZoomMax, MaxFps; }
+    sealed class Rows { public aw9 Screenshots, Scale, InsetX, InsetY, Background, ZoomDefault, ZoomMin, ZoomMax, MaxFps; }
     static readonly ConditionalWeakTable<t1, Rows> Added = new ConditionalWeakTable<t1, Rows>();
     static bool relayout;
     static Dictionary<string, string> confirm;     // interface settings to put back unless the player keeps them
@@ -64,6 +64,8 @@ public static class UnderrailOptions
         return null;
     }
 
+    static FixChoice CurrentScreenshots() { return new FixChoice("", FixSettings.SaveScreenshots ? "1" : "0"); }
+
     static FixChoice CurrentBackground() { return new FixChoice("", FixSettings.BackgroundFit ? "1" : "0"); }
 
     static FixChoice CurrentFps() { int f = FixSettings.MaxFps; return f > 0 ? new FixChoice(f + " FPS", f.ToString()) : new FixChoice("Unlimited", "0"); }
@@ -84,7 +86,7 @@ public static class UnderrailOptions
     // End of t1.h: our tab, after the game's own, with a group per fix that is switched on (none: no tab).
     public static void AddTab(t1 options)
     {
-        if (!FixSettings.UiScaleFix && !FixSettings.ZoomFix && !FixSettings.FrameRateFix) return;
+        if (!FixSettings.ResolutionFix && !FixSettings.UiScaleFix && !FixSettings.ZoomFix && !FixSettings.FrameRateFix) return;
         try
         {
             var page = new cvh();
@@ -101,6 +103,12 @@ public static class UnderrailOptions
                 Heading.Invoke(options, new object[] { title });
                 first = false;
             };
+            if (FixSettings.ResolutionFix)
+            {
+                group("Resolution");
+                var shots = new[] { new FixChoice("1080p view", "1"), new FixChoice("Game default", "0") };
+                rows.Screenshots = Add(options, "Save screenshots", shots, CurrentScreenshots(), shots[0]);
+            }
             if (FixSettings.UiScaleFix)
             {
                 group("Interface");
@@ -147,6 +155,7 @@ public static class UnderrailOptions
             ui |= Write(rows.InsetX, "UiInsetX", CurrentInset(FixSettings.UiInsetX));
             ui |= Write(rows.InsetY, "UiInsetY", CurrentInset(FixSettings.UiInsetY));
             if (ui) { confirm = before; relayout = true; }
+            Write(rows.Screenshots, "SaveScreenshots", CurrentScreenshots());     // used at the next save
             relayout |= Write(rows.Background, "BackgroundFit", CurrentBackground());     // only rebuilds the backgrounds; no confirmation needed
             relayout |= Write(rows.ZoomDefault, "ZoomDefault", Zoom(FixSettings.ZoomDefault));
             Write(rows.ZoomMin, "ZoomMin", Zoom(FixSettings.ZoomMin));

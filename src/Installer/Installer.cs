@@ -1,6 +1,7 @@
 // UnderRailFixes patcher: backs up underrail.exe and patches it in place to call UnderrailFix.dll.
 //   UnderrailFix-Patcher [game folder]               install (or update an existing install)
 //   UnderrailFix-Patcher [game folder] --uninstall   restore the original exe
+// UnderrailFix-Patcher-64bit (EXPERIMENTAL_64BIT) does the same with the experimental 64-bit mode (see Patch64).
 // The game folder defaults to the folder the patcher is in, then the current folder.
 //
 // Patches (each fix is switched on/off at runtime by UnderrailFix.ini, so changing it never needs a re-patch):
@@ -15,6 +16,7 @@
 //   UI scale: tb.k0/k4 screen size, SpriteBatch.Begin, the world batch's MatrixTransform, ScissorRectangle,
 //   Mouse.GetState, bso.abb cursor warp and the loading screen's size reads -> UiScaleFix (UiScale.cs)
 //   insets: ci3 sizing / shaking the world view, daj.iz (in-game surface mouse bounds), a7m.b floor position, d0p full-screen dim, czo.a menu backgrounds, bg1.iv picture rectangle -> UiScaleFix.FullScreen / WorldLocation(Get) / InScreen / FloorOrigin / DimRect
+//   tb.Draw save screenshot: full size, then shrunk to fit 2048 -> SaveScreenshot.Limit / Shrink
 //   b5r zoom label, mv SHIFT+wheel and ci3 zoom-button steps -> UnderrailDisplayModes.ShownZoom / ZoomStep
 using System;
 using System.Collections.Generic;
@@ -25,12 +27,11 @@ using Mono.Cecil.Cil;
 
 static class Patcher
 {
-    const string Exe = "underrail.exe", Backup = "underrail.exe.backup", Runtime = "UnderrailFix.dll";
+    const string Exe = "underrail.exe", Backup = "underrail.exe.backup", Runtime = "UnderrailFix.dll", Runtime64 = "UnderrailFix64.dll";
 
     static int Main(string[] args)
     {
         bool uninstall = args.Any(a => a == "--uninstall" || a == "-u");
-        x64 = args.Any(a => a == "--experimental-64bit");
         string dir = args.FirstOrDefault(a => !a.StartsWith("-")) ?? FindGame();
         int code;
         try
@@ -41,7 +42,7 @@ static class Patcher
         }
         catch (Exception ex)
         {
-            Console.WriteLine("Error: " + ex.Message);
+            Console.WriteLine("Error: " + (Environment.GetEnvironmentVariable("UNDERRAILFIX_DEBUG") == "1" ? ex.ToString() : ex.Message));
             code = 1;
         }
         if (args.Length == 0 && !Console.IsInputRedirected)
@@ -67,15 +68,22 @@ static class Patcher
     static bool IsPatched(string path)
     {
         using (var m = ModuleDefinition.ReadModule(path))
-            return m.AssemblyReferences.Any(r => r.Name == "UnderrailFix");
+            return m.AssemblyReferences.Any(r => r.Name == "UnderrailFix" || r.Name == "UnderrailFix64");
     }
 
-    // --experimental-64bit (not in releases yet): run as a 64-bit process under Proton/Wine Mono (FNA). SFML music and
-    // the Steam calls are redirected to managed replacements (Music.cs, SteamBridge.cs) and the 32-bit flags are
-    // cleared on underrail.exe and the game's sfmlnet-*.dll (those get .backup copies too).
-    static bool x64;
+    // Experimental 64-bit patcher (built with EXPERIMENTAL_64BIT as UnderrailFix-Patcher-64bit, its own download): run as
+    // a 64-bit process on our FNA.dll instead of XNA (Microsoft XNA is 32-bit only), on Windows and under Proton. underrail.exe and a copy of the runtime (UnderrailFix64.dll) are
+    // pointed at FNA (FnaMode.cs; the copy is made by the build, src/Build/Retarget.cs --fna); SFML music and the Steam calls go to managed replacements (Music.cs, SteamBridge.cs);
+    // the 32-bit flags are cleared on underrail.exe and the game's sfmlnet-*.dll (those get .backup copies too).
+    // FNA's native libraries go to x64\ (a 32-bit FNA under Wine Mono would pick them up from the game folder itself).
+#if EXPERIMENTAL_64BIT
+    const bool x64 = true;
+#else
+    const bool x64 = false;
+#endif
     static readonly string[] SfmlNet = { "sfmlnet-audio-2.dll", "sfmlnet-window-2.dll" };
-    static readonly string[] Extras = { "NVorbis.dll", "UnderrailSteamHost.exe" };
+    static readonly string[] Extras = { Runtime64, "NVorbis.dll", "UnderrailSteamHost.exe", "FNA.dll",
+        Path.Combine("x64", "FNA3D.dll"), Path.Combine("x64", "FAudio.dll"), Path.Combine("x64", "SDL3.dll") };
 
     static int Install(string dir)
     {
@@ -103,16 +111,19 @@ static class Patcher
             Console.WriteLine("Backed up the original as " + Backup + ".");
         }
 
-        byte[] patched = Patch(source, runtime);
+        string runtime64 = Path.Combine(dir, Runtime64);
+        byte[] patched;
         if (x64)
         {
-            string here2 = AppDomain.CurrentDomain.BaseDirectory;
             foreach (string extra in Extras)
             {
-                string from = new[] { here2, Path.Combine(here2, ".."), dir }.Select(d => Path.Combine(d, extra)).FirstOrDefault(File.Exists);
-                if (from == null) throw new Exception(extra + " is missing (needed for --experimental-64bit).");
-                if (!string.Equals(Path.GetFullPath(from), Path.GetFullPath(Path.Combine(dir, extra)), StringComparison.OrdinalIgnoreCase)) File.Copy(from, Path.Combine(dir, extra), true);
+                string from = new[] { here, Path.Combine(here, ".."), dir }.Select(d => Path.Combine(d, extra)).FirstOrDefault(File.Exists);
+                if (from == null) throw new Exception(extra + " is missing (it comes with the 64-bit patcher; copy all of its files into the game folder).");
+                string to = Path.Combine(dir, extra);
+                Directory.CreateDirectory(Path.GetDirectoryName(to));
+                if (!string.Equals(Path.GetFullPath(from), Path.GetFullPath(to), StringComparison.OrdinalIgnoreCase)) File.Copy(from, to, true);
             }
+            patched = Patch(source, runtime64);
             foreach (string lib in SfmlNet)
             {
                 string path = Path.Combine(dir, lib), libBackup = path + ".backup";
@@ -121,7 +132,12 @@ static class Patcher
                 ClearClr32Bit(b);
                 File.WriteAllBytes(path, b);
             }
-            Console.WriteLine("Experimental 64-bit: cleared the 32-bit flags; SFML music and Steam calls redirected.");
+            Console.WriteLine("Experimental 64-bit: FNA instead of XNA, 32-bit flags cleared, SFML music and Steam calls redirected.");
+        }
+        else
+        {
+            patched = Patch(source, runtime);
+            Remove64(dir);
         }
         string temp = exe + ".new";
         File.WriteAllBytes(temp, patched);
@@ -146,15 +162,33 @@ static class Patcher
             return 0;
         }
         if (!File.Exists(backup)) throw new Exception("No " + Backup + " to restore. Use Steam's \"Verify integrity of game files\" (or reinstall) instead.");
+        Remove64(dir);
+        File.Copy(backup, exe, true);
+        File.Delete(backup);
+        Console.WriteLine("Restored the original " + Exe + ". You can now delete UnderrailFix.dll, UnderrailFix.ini and UnderrailFix.log.");
+        return 0;
+    }
+
+    // Undoes the 64-bit-only changes: the game's sfmlnet DLLs back to the originals. The 64-bit files (UnderrailFix64.dll,
+    // FNA.dll, NVorbis.dll, UnderrailSteamHost.exe, x64\) are unused then and stay, so the 64-bit patcher can run again.
+    static void Remove64(string dir)
+    {
         foreach (string lib in SfmlNet)
         {
             string libBackup = Path.Combine(dir, lib + ".backup");
             if (File.Exists(libBackup)) { File.Copy(libBackup, Path.Combine(dir, lib), true); File.Delete(libBackup); }
         }
-        File.Copy(backup, exe, true);
-        File.Delete(backup);
-        Console.WriteLine("Restored the original " + Exe + ". You can now delete UnderrailFix.dll, UnderrailFix.ini and UnderrailFix.log.");
-        return 0;
+    }
+
+    // Every type reference into an XNA 4.0 assembly now refers to the same type in FNA (FNA has all of XNA's types,
+    // with the same names, in one assembly).
+    static void ToFna(ModuleDefinition module, AssemblyNameReference fna)
+    {
+        var reference = module.AssemblyReferences.FirstOrDefault(r => r.Name == fna.Name);
+        if (reference == null) { reference = new AssemblyNameReference(fna.Name, fna.Version) { PublicKeyToken = fna.PublicKeyToken, Culture = fna.Culture }; module.AssemblyReferences.Add(reference); }
+        foreach (var t in module.GetTypeReferences())
+            if (t.Scope is AssemblyNameReference a && a.Name.StartsWith("Microsoft.Xna.Framework")) t.Scope = reference;
+        foreach (var r in module.AssemblyReferences.Where(r => r.Name.StartsWith("Microsoft.Xna.Framework")).ToList()) module.AssemblyReferences.Remove(r);
     }
 
     static byte[] Patch(string exe, string runtime)
@@ -245,6 +279,14 @@ static class Patcher
             loading++;
         }
         Expect("loading screen size reads", loading, 2);
+        // Save screenshots: rendered at full size and shrunk to fit 2048 (Screenshot.cs), instead of cropped.
+        var shotLimits = draw.Body.Instructions.Where(i => i.OpCode == OpCodes.Ldc_I4 && (int)i.Operand == 2048).ToList();
+        foreach (var i in shotLimits) draw.Body.GetILProcessor().InsertAfter(i, Instruction.Create(OpCodes.Call, hook("SaveScreenshot", "Limit")));
+        Expect("screenshot size limits", shotLimits.Count, 2);
+        var shotField = tb.Fields.Single(f => f.Name == "x" && f.FieldType.Name == "Texture2D");
+        var shotStores = draw.Body.Instructions.Where(i => i.OpCode == OpCodes.Stfld && i.Operand == shotField).ToList();
+        foreach (var i in shotStores) draw.Body.GetILProcessor().InsertBefore(i, Instruction.Create(OpCodes.Call, hook("SaveScreenshot", "Shrink")));
+        Expect("screenshot stores", shotStores.Count, 1);
 
         int begins = 0, scissors = 0, mice = 0, transforms = 0;
         foreach (var type in module.GetTypes())
@@ -355,7 +397,7 @@ static class Patcher
         Expect("Mouse.GetState calls", mice, 7);
         Expect("world batch projections", transforms, 1);
 
-        if (x64) Patch64(module, hook);
+        if (x64) Patch64(module, hook, fix);
 
         var ms = new MemoryStream();
         asm.Write(ms);
@@ -371,7 +413,7 @@ static class Patcher
         if (found != expected) throw new Exception("this game version isn't supported (" + what + ": found " + found + ", expected " + expected + ")");
     }
 
-    static void Patch64(ModuleDefinition module, Func<string, string, MethodReference> hook)
+    static void Patch64(ModuleDefinition module, Func<string, string, MethodReference> hook, ModuleDefinition fix)
     {
         // SFML music: every use of an SFML type becomes an object handled by FixMusic.
         var music = new Dictionary<string, string> {
@@ -404,7 +446,91 @@ static class Patcher
         }
         Expect("SFML music calls", calls, 10);
         if (steam == 0) throw new Exception("this game version isn't supported (no Steam calls found)");
+
+        // tb uses the game window as a WinForms Form: (Form)Control.FromHandle(Window.Handle), then Form members. The
+        // handle read is dropped and the GameWindow goes to FnaWindow.Form; the Form members to FnaWindow.
+        var tb = module.GetType("tb");
+        var formMembers = new Dictionary<string, string> {
+            { "set_StartPosition", "SetStartPosition" }, { "get_FormBorderStyle", "GetBorderStyle" }, { "set_FormBorderStyle", "SetBorderStyle" },
+            { "get_Location", "GetLocation" }, { "set_Location", "SetLocation" }, { "get_Width", "GetWidth" }, { "get_Height", "GetHeight" } };
+        int forms = 0;
+        foreach (var m in tb.Methods.Where(m => m.HasBody))
+        {
+            var lookups = m.Body.Instructions.Where(i => i.Operand is MethodReference r && r.Name == "FromHandle" && r.DeclaringType.FullName == "System.Windows.Forms.Control").ToList();
+            if (lookups.Count == 0) continue;
+            foreach (var i in lookups)
+            {
+                var handle = i.Previous;
+                var cast = i.Next;
+                if (!(handle.Operand is MethodReference h && h.Name == "get_Handle" && h.DeclaringType.Name == "GameWindow") || cast.OpCode != OpCodes.Castclass)
+                    throw new Exception("this game version isn't supported (window form in tb." + m.Name + ")");
+                handle.OpCode = OpCodes.Nop; handle.Operand = null;
+                cast.OpCode = OpCodes.Nop; cast.Operand = null;
+                i.OpCode = OpCodes.Call; i.Operand = hook("FnaWindow", "Form");
+                forms++;
+            }
+            foreach (var v in m.Body.Variables.Where(v => v.VariableType.FullName == "System.Windows.Forms.Form")) v.VariableType = module.TypeSystem.Object;
+            foreach (var i in m.Body.Instructions)
+            {
+                var r = i.Operand as MethodReference;
+                if (r == null || r.DeclaringType.Namespace != "System.Windows.Forms" || (r.DeclaringType.Name != "Form" && r.DeclaringType.Name != "Control")) continue;
+                string target;
+                if (!formMembers.TryGetValue(r.Name, out target)) throw new Exception("this game version isn't supported (window Form." + r.Name + " in tb." + m.Name + ")");
+                i.OpCode = OpCodes.Call; i.Operand = hook("FnaWindow", target);
+            }
+        }
+        Expect("window form lookups", forms, 4);
+        // tb.lg(): the window handle bso passes to ClientToScreen (cursor warps); FNA's is an SDL window, not an HWND.
+        var lg = tb.Methods.Single(m => m.Name == "lg" && m.Parameters.Count == 0 && m.ReturnType.MetadataType == MetadataType.IntPtr);
+        foreach (var ret in lg.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList())
+            lg.Body.GetILProcessor().InsertBefore(ret, Instruction.Create(OpCodes.Call, hook("FnaWindow", "Hwnd")));
+
+        // Saves name XNA types with the assembly that wrote them; e6e.av3(typeName, assembly, throw) resolves them.
+        var resolve = module.GetType("e6e").Methods.Single(m => m.Name == "av3" && m.Parameters.Count == 3 && m.Parameters[0].ParameterType.MetadataType == MetadataType.String);
+        var resolveIl = resolve.Body.GetILProcessor();
+        var resolveStart = resolve.Body.Instructions[0];
+        foreach (var p in resolve.Parameters.Take(2))
+        {
+            resolveIl.InsertBefore(resolveStart, Instruction.Create(OpCodes.Ldarg, p));
+            resolveIl.InsertBefore(resolveStart, Instruction.Create(OpCodes.Call, hook("FnaMode", "SaveTypeName")));
+            resolveIl.InsertBefore(resolveStart, Instruction.Create(OpCodes.Starg, p));
+        }
+
+        // ...and e6e.av5(type, out typeName, out assembly, bool) names them when saving: written as XNA names (SavedName).
+        var name = module.GetType("e6e").Methods.Single(m => m.Name == "av5" && m.Parameters.Count == 4 && m.Parameters[1].ParameterType.IsByReference && m.Parameters[2].ParameterType.IsByReference);
+        var nameIl = name.Body.GetILProcessor();
+        foreach (var ret in name.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList())
+        {
+            // As in AppendCall: the first inserted instruction takes the ret's place, so branches to it run the hook.
+            nameIl.InsertAfter(ret, Instruction.Create(OpCodes.Ret));
+            nameIl.InsertAfter(ret, Instruction.Create(OpCodes.Call, hook("FnaMode", "SavedName")));
+            nameIl.InsertAfter(ret, Instruction.Create(OpCodes.Ldarg_3));
+            nameIl.InsertAfter(ret, Instruction.Create(OpCodes.Ldarg_2));
+            ret.OpCode = OpCodes.Ldarg_1; ret.Operand = null;
+        }
+
+        // be3 (the game's formatter) names types the binder leaves unnamed itself: type.Assembly.FullName, type.FullName.
+        var writer = module.GetType("be3").Methods.Single(m => m.HasBody && m.Body.Instructions.Any(i => i.Operand is MethodReference r && r.Name == "BindToName"));
+        int assemblies = 0, typeNames = 0;
+        foreach (var i in writer.Body.Instructions)
+        {
+            var r = i.Operand as MethodReference;
+            if (r == null) continue;
+            if (r.Name == "get_FullName" && r.DeclaringType.FullName == "System.Reflection.Assembly" && i.Previous.Operand is MethodReference g && g.Name == "get_Assembly")
+            {
+                i.Previous.OpCode = OpCodes.Nop; i.Previous.Operand = null;
+                i.OpCode = OpCodes.Call; i.Operand = hook("FnaMode", "WrittenAssembly"); assemblies++;
+            }
+            else if (r.Name == "get_FullName" && r.DeclaringType.FullName == "System.Type")
+            {
+                i.OpCode = OpCodes.Call; i.Operand = hook("FnaMode", "WrittenTypeName"); typeNames++;
+            }
+        }
+        Expect("formatter assembly names", assemblies, 1);
+        Expect("formatter type names", typeNames, 1);
+
         module.Attributes &= ~(ModuleAttributes.Required32Bit | ModuleAttributes.Preferred32Bit);
+        ToFna(module, fix.AssemblyReferences.Single(r => r.Name == "FNA"));
     }
 
     // COMIMAGE_FLAGS_32BITREQUIRED / 32BITPREFERRED in a .NET PE's CLI header, cleared in place (no rewrite, so a
