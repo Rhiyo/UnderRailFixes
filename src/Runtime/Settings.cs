@@ -48,7 +48,7 @@ ZoomDefault=150
 ZoomMin=75
 ZoomMax=200
 
-; 1 = interface scale and insets below; 0 = the game's own interface (UiScale and the insets are ignored).
+; 1 = interface scale, insets and menu backgrounds below; 0 = the game's own interface (UiScale, the insets and BackgroundFit are ignored).
 UiScaleFix=1
 
 ; With UiScaleFix=1: interface scale on top of the game's Interface Size option. auto = whole multiples by the screen's shorter side:
@@ -64,7 +64,7 @@ UiScale=auto
 UiInsetX=0
 UiInsetY=0
 
-; Menu backgrounds (main menu, options...): 0 = fill the screen, cropping the art (the game's own);
+; With UiScaleFix=1, menu backgrounds (main menu, options...): 0 = fill the screen, cropping the art (the game's own);
 ; 1 = show the whole image, as large as fits, never stretched. Either way they ignore the insets.
 BackgroundFit=0
 
@@ -165,7 +165,7 @@ Log=0
     public static bool DpiAware => Flag("DpiAware");
     public static bool FrameRateFix { get { string v = Get("FrameRateFix"); return v == "1" || string.Equals(v, "on", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase); } }     // off unless set (not tested thoroughly)
     public static int MaxFps => Number("MaxFps") ?? 0;
-    public static bool BackgroundFit => Get("BackgroundFit") == "1";     // off unless set
+    public static bool BackgroundFit => UiScaleFix && Get("BackgroundFit") == "1";     // off unless set; part of the Interface group
     public static bool LogEnabled { get { string v = Get("Log"); return v == "1" || string.Equals(v, "on", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase); } }     // off unless set
 
     // Called when the in-game menu picks a resolution; null = native.

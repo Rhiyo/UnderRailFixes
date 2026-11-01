@@ -17,7 +17,7 @@ Fixes (README.md has the player-facing description):
 | Resolution | `ResolutionFix`, `Width`, `Height`, `SaveScreenshots` | resolution list from the monitor's modes; resolution kept in the ini (default native), config.dat keeps a vanilla value; long dropdowns scroll; no odd aspect labels; save screenshots above 2048 px show the 1080p view instead of the stock top-left crop |
 | Zoom | `ZoomFix`, `ZoomDefault`, `ZoomMin`, `ZoomMax` | zoom as a 1080p screen would need it for the same view (numbers match the stock 1080p indicator: start 150, 100-200), wider limits, steps scaled |
 | Interface | `UiScaleFix`, `UiScale`, `UiInsetX`, `UiInsetY` | whole-UI scale (auto = whole multiples of the shorter side / 2160), insets that centre the UI while the world stays full-screen |
-| Menu backgrounds | `BackgroundFit` | 0 = the game's crop; 1 = whole image, letterboxed (backgrounds ignore insets either way) |
+| Menu backgrounds (Interface group) | `BackgroundFit` (only with `UiScaleFix`) | 0 = the game's crop; 1 = whole image, letterboxed (backgrounds ignore insets either way) |
 | DPI | `DpiAware` | Windows only: per-monitor DPI awareness before the window exists |
 | Frame rate | `FrameRateFix` (**default off**: not tested thoroughly), `MaxFps` | no fixed 60 Hz timestep (0) or a fixed one at MaxFps |
 | Log | `Log` | 0 (default) = no log file; 1 = `UnderrailFix.log` |

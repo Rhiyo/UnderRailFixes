@@ -52,12 +52,12 @@ ZoomFix=1         ; 1 = zoom as on a 1080p screen, same on every screen; 0 = the
 ZoomDefault=150   ; starting zoom, also used with Allow Zoom off (the game's 1080p default)
 ZoomMin=75        ; how far Allow Zoom (SHIFT+wheel) can zoom out (the game stops at 100)
 ZoomMax=200       ; how far it can zoom in (the game's 1080p limit)
-UiScaleFix=1      ; 1 = interface scale and insets below; 0 = the game's own interface
+UiScaleFix=1      ; 1 = interface scale, insets and menu backgrounds below; 0 = the game's own interface
 UiScale=auto      ; interface scale: auto = whole multiples (100% below 4320p, 200% from 4320p ...); or a percentage
 UiInsetX=0        ; space kept clear at the left and right edges (total, split evenly): 0.1 or 10% = 5% each side, 256 or 256px = 128 px each side
 UiInsetY=0        ; same for the top and bottom
 DpiAware=1        ; Windows only: stop Windows display scaling from stretching the game
-BackgroundFit=0   ; menu backgrounds: 0 = fill the screen, cropping the art (as the game does); 1 = show the whole image, never stretched
+BackgroundFit=0   ; with UiScaleFix=1, menu backgrounds: 0 = fill the screen, cropping the art (as the game does); 1 = show the whole image, never stretched
 FrameRateFix=0    ; 1 = no 60 FPS cap (off by default: not tested thoroughly yet); 0 = the game's fixed 60
 MaxFps=0          ; with FrameRateFix=1: 0 = no cap (with VSync: your refresh rate), or a cap such as 120
 Log=0             ; 1 = write UnderrailFix.log (for bug reports)
@@ -107,7 +107,7 @@ The main menu, options and loading screens are interface too, so their buttons a
 
 ### Menu backgrounds
 
-The game crops its menu art to fill the screen (it ships the art in several shapes and picks the closest). With `BackgroundFit=1` (or **Menu backgrounds: Show whole image** in Options → Fixes) you see the whole picture instead, as large as fits and centred, with black bars where its shape doesn't match the screen. It's never stretched. Either way, the menu's buttons stay where they normally are (inside the inset area, with insets).
+The game crops its menu art to fill the screen (it ships the art in several shapes and picks the closest). With `UiScaleFix=1` and `BackgroundFit=1` (or **Menu backgrounds: Show whole image** in Options → Fixes) you see the whole picture instead, as large as fits and centred, with black bars where its shape doesn't match the screen. It's never stretched. Either way, the menu's buttons stay where they normally are (inside the inset area, with insets).
 
 ### Frame rate
 
