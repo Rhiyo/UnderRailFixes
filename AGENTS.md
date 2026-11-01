@@ -175,7 +175,8 @@ Framework 4), `underrailfix-patcher` + `linux/` (Linux: mkbundle'd Mono, needs g
   -> byte-identical). Runtime rules without XNA (ScaleRules, ResolutionStore, settings migration) can be called by
   reflection from a tiny mono program in that folder. Hide Mono (`bwrap --tmpfs /usr/lib/mono --tmpfs /etc/mono`)
   to prove the Linux patcher is self-contained.
-- In game: `UnderrailFix.log` logs resolution decisions, display modes, "interface: ..." lines once scaling/insets
+- In game, with `Log=1` in the ini (off by default; `Log.Always` is only used for the version-mismatch exit):
+  `UnderrailFix.log` logs resolution decisions, display modes, "interface: ..." lines once scaling/insets
   are active, option changes, and errors.
 - Other resolutions: `tools/gamescope-test.sh 7680 4320` (8K), `3840 2160`, `2160 3840` (portrait). Compare
   screenshots: 4K and 8K should look identical.
@@ -199,4 +200,7 @@ Framework 4), `underrailfix-patcher` + `linux/` (Linux: mkbundle'd Mono, needs g
 - Advanced shader tiles flicker black on FNA3D's SDLGPU (Vulkan) and OpenGL backends; `FNA3D_FORCE_DRIVER=D3D11`
   fixes it. Reported upstream: https://github.com/FNA-XNA/FNA3D/issues/274
 - On GE-Proton the game can hang on exit in `winepulse.so: pulse_stop` (GE's proton-ds5-haptic patches change
-  winepulse); official Proton and Proton-CachyOS exit fine.
+  winepulse); official Proton and Proton-CachyOS exit fine. Suggested (untested) workaround on GE:
+  `WINEDLLOVERRIDES="winepulse.drv=d"` (Wine falls back to winealsa).
+- The game's own logger (`aa5`) only calls `Trace.WriteLine`, which no listener writes anywhere in release builds,
+  so there is no game log to add to; `UnderrailFix.log` is the only log.

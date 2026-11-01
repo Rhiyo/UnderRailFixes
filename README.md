@@ -46,6 +46,7 @@ UiScale=auto      ; interface scale: auto = whole multiples (100% below 4320p, 2
 UiInsetX=0        ; space kept clear at the left and right edges (total, split evenly): 0.1 or 10% = 5% each side, 256 or 256px = 128 px each side
 UiInsetY=0        ; same for the top and bottom
 DpiAware=1        ; Windows only: stop Windows display scaling from stretching the game
+Log=0             ; 1 = write UnderrailFix.log (for bug reports)
 ```
 
 ### Zoom
@@ -97,9 +98,9 @@ Run the patcher with `--uninstall` (on Windows, from a command prompt: `Underrai
 ## Notes for Linux (Proton)
 
 - If the floor tiles flicker black with the **Advanced** shader, add `FNA3D_FORCE_DRIVER=D3D11 %command%` to the launch options ([FNA3D#274](https://github.com/FNA-XNA/FNA3D/issues/274)).
-- On GE-Proton the game may keep running after you quit (an audio-driver hang in GE's controller-audio patches). Official Proton and Proton-CachyOS don't have this.
+- On GE-Proton the game may keep running after you quit: Wine's PulseAudio driver hangs while shutting down (GE's controller-audio patches change it). Official Proton and Proton-CachyOS don't have this. On GE-Proton, `WINEDLLOVERRIDES="winepulse.drv=d" %command%` in the launch options should avoid it, by making Wine use its ALSA audio driver instead (PipeWire and PulseAudio both provide ALSA). This workaround hasn't been confirmed yet.
 
-`UnderrailFix.log` in the game folder records what the fixes did, which helps when reporting problems.
+To report a problem, set `Log=1` in `UnderrailFix.ini` and start the game: `UnderrailFix.log` in the game folder then records what the fixes did and any errors. Logging is off by default.
 
 ## Building from source
 

@@ -14,7 +14,7 @@ public static class FixStartup
             // Another version's hooks may not exist in this DLL; stop with a clear message instead of a crash later.
             string message = "UnderrailFix.dll is version " + FixVersion.Value + ", but underrail.exe was patched by version " + patched
                 + ".\n\nRun the UnderrailFix patcher again to update the patch.";
-            Log.Write(message.Replace("\n\n", " "));
+            Log.Always(message.Replace("\n\n", " "));
             try { MessageBox(IntPtr.Zero, message, "UnderrailFix", 0x10); } catch { }
             Environment.Exit(1);
         }

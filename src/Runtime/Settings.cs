@@ -62,6 +62,9 @@ UiInsetY=0
 ; Windows only: 1 = tell Windows the game handles high-DPI screens itself, so display scaling (e.g. 150% or 200%
 ; in Windows' display settings) doesn't stretch it or hide part of the resolution. 0 = Windows' default behaviour.
 DpiAware=1
+
+; 1 = write UnderrailFix.log in the game folder (what the fixes decided and any errors), e.g. for a bug report.
+Log=0
 ";
 
     static Dictionary<string, string> values;
@@ -141,6 +144,7 @@ DpiAware=1
     public static string UiInsetX => Get("UiInsetX");
     public static string UiInsetY => Get("UiInsetY");
     public static bool DpiAware => Flag("DpiAware");
+    public static bool LogEnabled { get { string v = Get("Log"); return v == "1" || string.Equals(v, "on", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase); } }     // off unless set
 
     // Called when the in-game menu picks a resolution; null = native.
     public static void SetSize(int? w, int? h)
@@ -221,7 +225,14 @@ public static class Log
     static readonly object Gate = new object();
     static bool started;
 
+    // Only with Log=1 in the ini.
     public static void Write(string line)
+    {
+        if (FixSettings.LogEnabled) Always(line);
+    }
+
+    // Written whatever Log says: for messages the player must be able to find (the game closes after them).
+    public static void Always(string line)
     {
         lock (Gate)
         {
