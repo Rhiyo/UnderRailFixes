@@ -95,14 +95,32 @@ public static class UiScaleFix
         return ToPixels(a) * projection;
     }
 
-    // Clip rectangles: the game works in UI coordinates, the device in pixels.
+    // Clip rectangles: the game works in UI coordinates, the device in pixels. One exception: a clip covering the
+    // whole current target (the screen, or the screenshot image while one is captured) means "nothing clipped", and
+    // the game tests for that as X == 0 && Y == 0 (a7m: it only puts a saved clip back when X or Y isn't 0). Mapped
+    // with insets it would start at -offset and look clipped, and a clip saved during the transition screenshot
+    // (2048x576) would then be put back on the screen and kept there. So it is passed as (0, 0, screen size in UI
+    // units) both ways.
+    static Rectangle Unclipped(ScaleRules.Area a) { return new Rectangle(0, 0, (int)Math.Ceiling(screenW / a.K), (int)Math.Ceiling(screenH / a.K)); }
+
+    static Rectangle FullTarget(GraphicsDevice g)
+    {
+        var targets = g.GetRenderTargets();
+        if (targets.Length > 0 && targets[0].RenderTarget is Texture2D t) return new Rectangle(0, 0, t.Width, t.Height);
+        return new Rectangle(0, 0, g.PresentationParameters.BackBufferWidth, g.PresentationParameters.BackBufferHeight);
+    }
+
     public static void SetScissor(GraphicsDevice g, Rectangle r)
     {
         ScaleRules.Area a;
         if (Drawing(g, out a))
         {
-            int x = (int)Math.Floor(r.X * a.K) + a.Left, y = (int)Math.Floor(r.Y * a.K) + a.Top;
-            r = new Rectangle(x, y, (int)Math.Ceiling(r.Right * a.K) + a.Left - x, (int)Math.Ceiling(r.Bottom * a.K) + a.Top - y);
+            if (r == Unclipped(a)) r = FullTarget(g);
+            else
+            {
+                int x = (int)Math.Floor(r.X * a.K) + a.Left, y = (int)Math.Floor(r.Y * a.K) + a.Top;
+                r = new Rectangle(x, y, (int)Math.Ceiling(r.Right * a.K) + a.Left - x, (int)Math.Ceiling(r.Bottom * a.K) + a.Top - y);
+            }
         }
         g.ScissorRectangle = r;
     }
@@ -112,6 +130,7 @@ public static class UiScaleFix
         Rectangle r = g.ScissorRectangle;
         ScaleRules.Area a;
         if (!Drawing(g, out a)) return r;
+        if (r == FullTarget(g)) return Unclipped(a);
         int x = (int)Math.Floor((r.X - a.Left) / a.K), y = (int)Math.Floor((r.Y - a.Top) / a.K);
         return new Rectangle(x, y, (int)Math.Ceiling((r.Right - a.Left) / a.K) - x, (int)Math.Ceiling((r.Bottom - a.Top) / a.K) - y);
     }
