@@ -38,9 +38,13 @@ Goal was "drop in, no launch options, delete to remove". Under Proton every no-p
 
 ```
 build.sh                 build into dist/ (and `./build.sh install` patches the local Steam copy)
+release.sh               the only way to make a release (see Releasing)
+src/Release/             licence texts shipped in the release zip
+tools/check-release.sh   automated patcher checks (release.sh runs them)
 src/Runtime/*.cs         UnderrailFix.dll: everything the patched game calls
 src/Installer/*.cs       UnderrailFix-Patcher.exe: backup + Cecil patches + uninstall
 src/Build/Retarget.cs    build step, see "XNA type identity"
+src/Build/GameVersion.cs, ListHooks.cs   release helpers
 src/Bundle/mono.config   dllmap for the bundled Linux patcher
 tools/gamescope-test.sh  run the game at a virtual resolution (8K, portrait...)
 ```
@@ -58,11 +62,20 @@ Framework 4), `underrailfix-patcher` + `linux/` (Linux: mkbundle'd Mono, needs g
 
 ### Releasing
 
-1. Bump `FixVersion.Value` (src/Runtime/Version.cs). The patcher stamps it into the exe; a DLL/exe mismatch makes
-   the game show "run the patcher again" and exit instead of crashing.
-2. If a setting's **meaning** changed: bump `FixSettings.Version` and add the key to `Reset` (Settings.cs). Older
-   ini files are then regenerated with current comments, the user's other values kept, those keys reset.
-3. `./build.sh`, zip `dist/UnderrailFix`.
+Always through `./release.sh X.Y.Z "description"` (or `-F notes.md`), never by hand, so every release is made the
+same way. It refuses to run unless on `main`, clean, in sync with origin, with a new version and UnderRail closed.
+Then it stamps `FixVersion.Value` (src/Runtime/Version.cs; committed only after everything passed), builds from
+scratch, runs `tools/check-release.sh`, packages `UnderRailFixes-X.Y.Z.zip` (dist + LICENSE.txt +
+THIRD-PARTY-NOTICES.txt from src/Release/), writes the notes (description + game version read from the exe by
+src/Build/GameVersion.cs + Steam build + install steps + SHA-256), tags `vX.Y.Z`, pushes and runs `gh release create`.
+
+`tools/check-release.sh` (also usable after any `./build.sh`) works on a temporary copy of the game folder: the Linux
+patcher with Mono hidden (install, re-run gives the same exe, simulated game update, uninstall restores the original
+byte for byte), the exact set of hooks in the patched exe (src/Build/ListHooks.cs; update its EXPECTED list when hooks
+are added or removed), and the Windows patcher producing the identical exe. No CI: building needs the real game.
+
+If a setting's **meaning** changed in the release, bump `FixSettings.Version` and add the key to `Reset`
+(Settings.cs) first: older ini files are then regenerated with current comments, other values kept, those keys reset.
 
 ## How the game is put together (what we learned)
 
