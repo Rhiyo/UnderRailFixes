@@ -13,7 +13,7 @@
 //   Main -> FixStartup.Run(version) (DLL version check, DPI awareness on Windows)
 //   UI scale: tb.k0/k4 screen size, SpriteBatch.Begin, the world batch's MatrixTransform, ScissorRectangle,
 //   Mouse.GetState, bso.abb cursor warp and the loading screen's size reads -> UiScaleFix (UiScale.cs)
-//   insets: ci3 sizing / shaking the world view, daj.iz (in-game surface mouse bounds), a7m.b floor position, d0p full-screen dim -> UiScaleFix.FullScreen / WorldLocation(Get) / InScreen / FloorOrigin / DimRect
+//   insets: ci3 sizing / shaking the world view, daj.iz (in-game surface mouse bounds), a7m.b floor position, d0p full-screen dim, czo.a menu backgrounds, bg1.iv picture rectangle -> UiScaleFix.FullScreen / WorldLocation(Get) / InScreen / FloorOrigin / DimRect
 //   b5r zoom label, mv SHIFT+wheel and ci3 zoom-button steps -> UnderrailDisplayModes.ShownZoom / ZoomStep
 using System;
 using System.IO;
@@ -285,6 +285,30 @@ static class Patcher
         var floorAt = floor.Body.Instructions.Where(i => i.Operand is MethodReference r && r.Name == "at" && r.Parameters.Count == 0).ToList();
         Expect("floor position at() reads", floorAt.Count, 1);
         floorAt[0].OpCode = OpCodes.Call; floorAt[0].Operand = hook("UiScaleFix", "FloorOrigin");
+        // czo.a(esj) -> bg1: full-screen menu backgrounds (see BackgroundSize).
+        var background = module.GetType("czo").Methods.Single(m => m.Name == "a" && m.IsStatic && m.Parameters.Count == 1 && m.Parameters[0].ParameterType.Name == "esj" && m.ReturnType.Name == "bg1");
+        var bgIl = background.Body.GetILProcessor();
+        var bgStart = background.Body.Instructions[0];
+        bgIl.InsertBefore(bgStart, Instruction.Create(OpCodes.Ldarg_0));
+        bgIl.InsertBefore(bgStart, Instruction.Create(OpCodes.Call, hook("UiScaleFix", "BackgroundSize")));
+        bgIl.InsertBefore(bgStart, Instruction.Create(OpCodes.Starg_S, background.Parameters[0]));
+        foreach (var ret in background.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList())
+        {
+            // The returned bg1 is on the stack: pass it through BackgroundPlace (taking the ret's place, as in AppendCall).
+            bgIl.InsertAfter(ret, Instruction.Create(OpCodes.Ret));
+            ret.OpCode = OpCodes.Call; ret.Operand = hook("UiScaleFix", "BackgroundPlace");
+        }
+        // bg1.iv: the first Rectangle it builds is where the picture is drawn; adjust it in place (BackgroundDraw).
+        var picture = module.GetType("bg1").Methods.Single(m => m.Name == "iv");
+        var rectCtor = picture.Body.Instructions.First(i => i.Operand is MethodReference r && r.DeclaringType.Name == "Rectangle" && r.Name == ".ctor" && r.Parameters.Count == 4);
+        var target = rectCtor;
+        while (target != null && !((target.OpCode == OpCodes.Ldloca || target.OpCode == OpCodes.Ldloca_S) && ((VariableDefinition)target.Operand).VariableType.Name == "Rectangle")) target = target.Previous;
+        if (target == null) throw new Exception("this game version isn't supported (background draw rectangle not found)");
+        var picIl = picture.Body.GetILProcessor();
+        picIl.InsertAfter(rectCtor, Instruction.Create(OpCodes.Call, hook("UiScaleFix", "BackgroundDraw")));
+        picIl.InsertAfter(rectCtor, Instruction.Create(OpCodes.Ldarg_0));
+        picIl.InsertAfter(rectCtor, Instruction.Create(target.OpCode, (VariableDefinition)target.Operand));
+
         var surface = module.GetType("daj").Methods.Single(m => m.Name == "iz");
         Replace(surface, il2 => { il2.Emit(OpCodes.Ldarg_1); il2.Emit(OpCodes.Call, hook("UiScaleFix", "InScreen")); il2.Emit(OpCodes.Ret); });
 

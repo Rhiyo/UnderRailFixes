@@ -25,7 +25,7 @@ enum StyleOnly { A }
 public static class UnderrailOptions
 {
     const string TabName = "Fixes";
-    sealed class Rows { public aw9 Scale, InsetX, InsetY, ZoomDefault, ZoomMin, ZoomMax; }
+    sealed class Rows { public aw9 Scale, InsetX, InsetY, Background, ZoomDefault, ZoomMin, ZoomMax; }
     static readonly ConditionalWeakTable<t1, Rows> Added = new ConditionalWeakTable<t1, Rows>();
     static bool relayout;
     static Dictionary<string, string> confirm;     // interface settings to put back unless the player keeps them
@@ -63,6 +63,8 @@ public static class UnderrailOptions
         if (int.TryParse(text, out px)) return new FixChoice(px + " px", px + "px");
         return null;
     }
+
+    static FixChoice CurrentBackground() { return new FixChoice("", FixSettings.BackgroundFit ? "1" : "0"); }
 
     static FixChoice Zoom(int p) { return new FixChoice(p + "%", p.ToString()); }
 
@@ -105,6 +107,8 @@ public static class UnderrailOptions
                 var insets = Enumerable.Range(0, 11).Select(i => Percent(i * 5)).ToList();
                 rows.InsetX = Add(options, "Interface inset, sides", insets, CurrentInset(FixSettings.UiInsetX), insets[0]);
                 rows.InsetY = Add(options, "Interface inset, top and bottom", insets, CurrentInset(FixSettings.UiInsetY), insets[0]);
+                var backgrounds = new[] { new FixChoice("Fill the screen", "0"), new FixChoice("Show whole image", "1") };
+                rows.Background = Add(options, "Menu backgrounds", backgrounds, CurrentBackground(), backgrounds[0]);
             }
             if (FixSettings.ZoomFix)
             {
@@ -135,6 +139,7 @@ public static class UnderrailOptions
             ui |= Write(rows.InsetX, "UiInsetX", CurrentInset(FixSettings.UiInsetX));
             ui |= Write(rows.InsetY, "UiInsetY", CurrentInset(FixSettings.UiInsetY));
             if (ui) { confirm = before; relayout = true; }
+            relayout |= Write(rows.Background, "BackgroundFit", CurrentBackground());     // only rebuilds the backgrounds; no confirmation needed
             relayout |= Write(rows.ZoomDefault, "ZoomDefault", Zoom(FixSettings.ZoomDefault));
             Write(rows.ZoomMin, "ZoomMin", Zoom(FixSettings.ZoomMin));
             Write(rows.ZoomMax, "ZoomMax", Zoom(FixSettings.ZoomMax));

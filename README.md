@@ -6,8 +6,16 @@ Display fixes for UnderRail, for ultrawide and other resolutions the game doesn'
 - **Insets:** the HUD and menus can be moved in from the screen's edges into a centred area, while the world still fills the screen.
 - **Interface scale:** the interface can be scaled beyond the game's largest Interface Size, automatically on screens above 4K.
 - **Zoom fix:** the world is the same size on every screen, as it is at 1080p, with more room to zoom out. The zoom indicator shows the same numbers as at 1080p.
+- **Menu backgrounds:** optionally show the whole menu art instead of the game's crop.
+- **In-game settings:** an **Options → Fixes** tab; changes apply without restarting.
 
 It works by patching your own `underrail.exe`, after backing it up. No launch options and no other game files are changed.
+
+## Compatibility
+
+Built and tested against **UnderRail 1.3.1.2** (the version shown on the main menu; Steam build 21973456, February 2026), on Linux with Proton, at 5120x1440 and at simulated 4K and 8K. The Windows patcher and Windows display scaling haven't been tested on Windows yet.
+
+Other game versions: the patcher checks every place it changes before writing anything. If an update changed that code, it stops with "this game version isn't supported" and leaves the game as it is.
 
 ## Install
 
@@ -23,7 +31,7 @@ The patcher saves the original as `underrail.exe.backup`, copies `UnderrailFix.d
 ### Updating
 
 - **The game updated** (or you used Steam's "Verify integrity of game files"): the exe is the original again, so the fixes are off. Run the patcher again. It saves the new original as the backup and patches it. If the update changed the code the fixes rely on, the patcher stops with "this game version isn't supported" before changing anything, and the game keeps working unmodified.
-- **New version of UnderrailFix:** copy all of its files over the old ones and run the patcher. It re-patches from your backup of the original, so patches never stack.
+- **New version of UnderRailFixes:** copy all of its files over the old ones and run the patcher. It re-patches from your backup of the original, so patches never stack.
 
 If you copy in a new `UnderrailFix.dll` but forget to run the patcher, the game shows a message saying so and closes, instead of crashing.
 
@@ -46,6 +54,7 @@ UiScale=auto      ; interface scale: auto = whole multiples (100% below 4320p, 2
 UiInsetX=0        ; space kept clear at the left and right edges (total, split evenly): 0.1 or 10% = 5% each side, 256 or 256px = 128 px each side
 UiInsetY=0        ; same for the top and bottom
 DpiAware=1        ; Windows only: stop Windows display scaling from stretching the game
+BackgroundFit=0   ; menu backgrounds: 0 = fill the screen, cropping the art (as the game does); 1 = show the whole image, never stretched
 Log=0             ; 1 = write UnderrailFix.log (for bug reports)
 ```
 
@@ -85,7 +94,11 @@ On a wide screen the HUD sits at the far edges. With `UiScaleFix=1`, insets move
 
 - `UiInsetX` / `UiInsetY`: how much to keep clear, in total, split evenly between the two sides. A decimal or `%` is a share of the screen (`0.1` or `10%` = 5% on each side); a whole number or `px` is screen pixels (`256` or `256px` = 128 px on each side).
 
-The main menu, options and loading screens are interface too, so they sit in the inset area with black edges around them. In game, the world still fills the screen and can be clicked right up to the edges. The interface never gets smaller than a quarter of the screen in either direction.
+The main menu, options and loading screens are interface too, so their buttons and windows sit in the inset area. Their background art ignores the insets and fills the whole screen, as without insets. In game, the world still fills the screen and can be clicked right up to the edges. The interface never gets smaller than a quarter of the screen in either direction.
+
+### Menu backgrounds
+
+The game crops its menu art to fill the screen (it ships the art in several shapes and picks the closest). With `BackgroundFit=1` (or **Menu backgrounds: Show whole image** in Options → Fixes) you see the whole picture instead, as large as fits and centred, with black bars where its shape doesn't match the screen. It's never stretched. Either way, the menu's buttons stay where they normally are (inside the inset area, with insets).
 
 ### Windows display scaling
 
@@ -100,7 +113,9 @@ Run the patcher with `--uninstall` (on Windows, from a command prompt: `Underrai
 - If the floor tiles flicker black with the **Advanced** shader, add `FNA3D_FORCE_DRIVER=D3D11 %command%` to the launch options ([FNA3D#274](https://github.com/FNA-XNA/FNA3D/issues/274)).
 - On GE-Proton the game may keep running after you quit: Wine's PulseAudio driver hangs while shutting down (GE's controller-audio patches change it). Official Proton and Proton-CachyOS don't have this. On GE-Proton, `WINEDLLOVERRIDES="winepulse.drv=d" %command%` in the launch options should avoid it, by making Wine use its ALSA audio driver instead (PipeWire and PulseAudio both provide ALSA). This workaround hasn't been confirmed yet.
 
-To report a problem, set `Log=1` in `UnderrailFix.ini` and start the game: `UnderrailFix.log` in the game folder then records what the fixes did and any errors. Logging is off by default.
+## Reporting problems
+
+Set `Log=1` in `UnderrailFix.ini` and start the game: `UnderrailFix.log` in the game folder then records what the fixes did and any errors. Logging is off by default. Please include your game version (main menu), your resolution and the log.
 
 ## Building from source
 

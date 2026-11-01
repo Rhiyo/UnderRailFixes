@@ -59,6 +59,10 @@ UiScale=auto
 UiInsetX=0
 UiInsetY=0
 
+; Menu backgrounds (main menu, options...): 0 = fill the screen, cropping the art (the game's own);
+; 1 = show the whole image, as large as fits, never stretched. Either way they ignore the insets.
+BackgroundFit=0
+
 ; Windows only: 1 = tell Windows the game handles high-DPI screens itself, so display scaling (e.g. 150% or 200%
 ; in Windows' display settings) doesn't stretch it or hide part of the resolution. 0 = Windows' default behaviour.
 DpiAware=1
@@ -144,6 +148,7 @@ Log=0
     public static string UiInsetX => Get("UiInsetX");
     public static string UiInsetY => Get("UiInsetY");
     public static bool DpiAware => Flag("DpiAware");
+    public static bool BackgroundFit => Get("BackgroundFit") == "1";     // off unless set
     public static bool LogEnabled { get { string v = Get("Log"); return v == "1" || string.Equals(v, "on", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase); } }     // off unless set
 
     // Called when the in-game menu picks a resolution; null = native.

@@ -17,7 +17,9 @@ Fixes (README.md has the player-facing description):
 | Resolution | `ResolutionFix`, `Width`, `Height` | resolution list from the monitor's modes; resolution kept in the ini (default native), config.dat keeps a vanilla value; long dropdowns scroll; no odd aspect labels |
 | Zoom | `ZoomFix`, `ZoomDefault`, `ZoomMin`, `ZoomMax` | zoom as a 1080p screen would need it for the same view (numbers match the stock 1080p indicator: start 150, 100-200), wider limits, steps scaled |
 | Interface | `UiScaleFix`, `UiScale`, `UiInsetX`, `UiInsetY` | whole-UI scale (auto = whole multiples of the shorter side / 2160), insets that centre the UI while the world stays full-screen |
+| Menu backgrounds | `BackgroundFit` | 0 = the game's crop; 1 = whole image, letterboxed (backgrounds ignore insets either way) |
 | DPI | `DpiAware` | Windows only: per-monitor DPI awareness before the window exists |
+| Log | `Log` | 0 (default) = no log file; 1 = `UnderrailFix.log` |
 
 In game: **Options -> Fixes** tab with a group per enabled fix; applies on Accept; scale/inset changes get a
 15 s keep/revert countdown (the game's own dialog).
@@ -63,6 +65,10 @@ Framework 4), `underrailfix-patcher` + `linux/` (Linux: mkbundle'd Mono, needs g
 3. `./build.sh`, zip `dist/UnderrailFix`.
 
 ## How the game is put together (what we learned)
+
+**Built against UnderRail 1.3.1.2** (`dm9.d`, shown on the main menu), Steam build 21973456 (Feb 2026), original
+`underrail.exe` MD5 `0046fd2c81955dff092f2cf00d1f60f8`. All obfuscated names below are from that build. After a game
+update, run the patcher on a copy first: an `Expect` failure names the patch point that moved.
 
 - .NET 4 / XNA 4.0, 32-bit with LARGE_ADDRESS_AWARE. Obfuscated: types and members are names like `t1`, `efw`,
   `a`, `b`; they can change between game versions. Decompile with `ilspycmd` (into a scratch folder, never the repo).
@@ -110,6 +116,8 @@ Framework 4), `underrailfix-patcher` + `linux/` (Linux: mkbundle'd Mono, needs g
 - `a7m.b(int,int)` (mouse -> floor tile) subtracts `at()` from the mouse but compares with tiles projected in screen
   coordinates (`m_b` includes `at()`): a stock bug that is harmless while the view is at 0,0.
 - Cursor warps: `bso.abb(Point)` -> Win32 `SetCursorPos` (right-drag camera re-centres the cursor every frame).
+- Menu backgrounds: `czo.a(esj size)` picks the concept art closest to the size's aspect (several ship), crops it
+  from the top-left (`bg1.d`), places it at 0,0 (main menu `a8k`, options `t1`, `iw`, `c9v` pass k0).
 - Popups dim the screen with `d0p.a(cp9, Color, Rectangle(0,0,k0), ...)` (Escape menu `cef`, `bnr`, `tg`, `e4u`, `pz`).
 - Off-screen render targets exist (e.g. `by8` lights); the screenshot path renders the UI into a target with a
   screen-sized viewport. Hence UI mapping applies only while the viewport is back-buffer-sized.
@@ -149,6 +157,8 @@ Framework 4), `underrailfix-patcher` + `linux/` (Linux: mkbundle'd Mono, needs g
 | `daj.iz` | `InScreen` | world clickable in inset margins |
 | `a7m.b` `at()` | `FloorOrigin` | floor clicks with insets (the stock bug above) |
 | `d0p.a(cp9, Color, Rectangle, bool, bool)` | `DimRect` | full-screen dims with insets |
+| `czo.a(esj)` -> `bg1` (start / return) | `BackgroundSize` / `BackgroundPlace` | menu backgrounds ignore insets; `BackgroundFit=1` shows the whole image (letterboxed) |
+| `bg1.iv` first Rectangle (draw target) | `BackgroundDraw` | the picture moves, not the control: the main menu panel is a **child** of the background |
 | end of `t1.h` / `t1.d` / `d6f.a(ls)` | `UnderrailOptions.AddTab/Save/Applied` | Fixes tab, save, live apply + confirm |
 
 ## Traps (each of these cost time)
@@ -181,8 +191,9 @@ Framework 4), `underrailfix-patcher` + `linux/` (Linux: mkbundle'd Mono, needs g
 - Other resolutions: `tools/gamescope-test.sh 7680 4320` (8K), `3840 2160`, `2160 3840` (portrait). Compare
   screenshots: 4K and 8K should look identical.
 - Done: 5120x1440 native, 4K and 8K (UI 200%, right-drag fixed), insets (floor clicks, edge clicks, Escape dim),
-  options tab basics.
-- Not yet: portrait, the Windows patcher and `DpiAware` on real Windows, the keep/revert countdown in all paths,
+  options tab basics, keep/revert countdown, zoom steps (wheel and buttons equal).
+- Not yet: the latest background change in game (picture drawn full-screen/letterboxed while the main menu's
+  panel stays inset), portrait, the Windows patcher and `DpiAware` on real Windows, the keep/revert countdown in all paths,
   older glibc distros for the Linux patcher.
 
 ## Open ideas

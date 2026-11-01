@@ -7,7 +7,7 @@
 // Hooks (Installer.cs): bef.k0/k4 screen size -> Virtual; SpriteBatch.Begin in cp9/bc2 -> Begin5/Begin6;
 // the world batch's MatrixTransform -> Transform; GraphicsDevice.ScissorRectangle get/set -> GetScissor/SetScissor;
 // Mouse.GetState -> GetMouse; bso.abb (cursor warp) -> ToScreen; tb.Draw's loading-screen size reads ->
-// VirtualWidth/VirtualHeight; ci3 sizing/moving the world view -> FullScreen/WorldLocation; daj.iz -> InScreen; a7m.b's at() -> FloorOrigin; d0p's fill -> DimRect.
+// VirtualWidth/VirtualHeight; ci3 sizing/moving the world view -> FullScreen/WorldLocation; daj.iz -> InScreen; a7m.b's at() -> FloorOrigin; d0p's fill -> DimRect; czo.a (menu backgrounds) -> BackgroundSize/BackgroundPlace; bg1.iv's draw rectangle -> BackgroundDraw.
 // Drawing is only mapped while the viewport covers the whole back buffer: off-screen render targets (light
 // effects and the like) keep the game's own pixel sizes, while screenshots, which use a screen-sized viewport,
 // are mapped like the screen.
@@ -166,6 +166,63 @@ public static class UiScaleFix
         if (r.X != 0 || r.Y != 0 || r.Width != (int)Math.Round(a.Width / a.K) || r.Height != (int)Math.Round(a.Height / a.K)) return r;
         return ScreenRect();
     }
+
+    // czo.a(esj) builds a full-screen menu background (main menu, options, character creation...) for a size: it
+    // picks the art closest to that size's aspect ratio, crops it from the top-left to fill, and places it at 0,0.
+    // With insets the screens pass the layout size, so the art is chosen and cropped for the whole screen instead,
+    // and drawn over it (backgrounds ignore insets). BackgroundFit=1 shows the whole image instead of the crop: as
+    // large as fits, centred, never stretched.
+    [ThreadStatic] static bool backgroundFull;
+
+    public static esj BackgroundSize(esj requested)
+    {
+        backgroundFull = false;
+        var a = Area;
+        if (screenW <= 0 || (a.Width == screenW && a.Height == screenH)) return requested;
+        int w = (int)SizeW.GetValue(requested), h = (int)SizeH.GetValue(requested);
+        if (w != (int)Math.Round(a.Width / a.K) || h != (int)Math.Round(a.Height / a.K)) return requested;
+        backgroundFull = true;
+        return new esj((int)Math.Ceiling(screenW / a.K), (int)Math.Ceiling(screenH / a.K));
+    }
+
+    // The control itself stays where the game puts it: the main menu's button panel and version text are its
+    // children, placed in the layout (inset) area. Only where the picture is drawn changes (BackgroundDraw).
+    sealed class Background { public bool Full; public int ArtW, ArtH; }
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<bg1, Background> backgrounds = new System.Runtime.CompilerServices.ConditionalWeakTable<bg1, Background>();
+
+    public static bg1 BackgroundPlace(bg1 background)
+    {
+        if (background == null) return background;
+        var info = new Background { Full = backgroundFull };
+        backgroundFull = false;
+        if (FixSettings.BackgroundFit)
+        {
+            cne resources = bpo.GetService<cne>();
+            var name = BgResource.GetValue(background) as string;
+            Texture2D art = resources == null || name == null ? null : resources.GetResource<Texture2D>(name);
+            if (art != null && art.Width > 0 && art.Height > 0) { info.ArtW = art.Width; info.ArtH = art.Height; BgCrop.SetValue(background, null); }
+        }
+        if (info.Full || info.ArtW > 0) backgrounds.Add(background, info);
+        return background;
+    }
+
+    // bg1.iv, right after it builds the rectangle it draws the picture into (from its own position and size).
+    public static void BackgroundDraw(ref Rectangle target, bg1 background)
+    {
+        Background info;
+        if (!backgrounds.TryGetValue(background, out info)) return;
+        if (info.Full) target = ScreenRect();
+        if (info.ArtW > 0)
+        {
+            double k = Math.Min((double)target.Width / info.ArtW, (double)target.Height / info.ArtH);
+            int w = (int)Math.Round(info.ArtW * k), h = (int)Math.Round(info.ArtH * k);
+            target = new Rectangle(target.X + (target.Width - w) / 2, target.Y + (target.Height - h) / 2, w, h);
+        }
+    }
+
+    // bg1: field b (resource name) shares its name with a method, and d (the crop, Rectangle?) is typed with the
+    // game's XNA reference, so both go through reflection.
+    static readonly System.Reflection.FieldInfo BgResource = typeof(bg1).GetField("b"), BgCrop = typeof(bg1).GetField("d");
 
     // ci3.iv reads the world view's Location to see whether a screen shake left it off 0,0: relative to the screen too.
     public static Point WorldLocationGet(euz world)
