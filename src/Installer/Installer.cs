@@ -1,0 +1,335 @@
+// UnderRailFixes patcher: backs up underrail.exe and patches it in place to call UnderrailFix.dll.
+//   UnderrailFix-Patcher [game folder]               install (or update an existing install)
+//   UnderrailFix-Patcher [game folder] --uninstall   restore the original exe
+// The game folder defaults to the folder the patcher is in, then the current folder.
+//
+// Patches (each fix is switched on/off at runtime by UnderrailFix.ini, so changing it never needs a re-patch):
+//   cnt (video settings) resolution default/load/save -> ResolutionStore.Default/Load/Save
+//   efw.a() / efw.a(key) -> UnderrailDisplayModes.List/Get (monitor modes, nearest-size fallback)
+//   egd.ToString -> UnderrailDisplayModes.Label
+//   aw9 (dropdown) open/close -> UnderrailDropdownScroll.Opened/Closed (fits the list, adds a scrollbar)
+//   dka.b zoom limits ud(1f) / uf(2f), uf(3f) -> UnderrailDisplayModes.MinZoom / MaxZoom
+//   t1 (Options): end of t1.h -> UnderrailOptions.AddTab, end of t1.d (Accept) -> Save; end of d6f.a(ls) -> Applied
+//   Main -> FixStartup.Run(version) (DLL version check, DPI awareness on Windows)
+//   UI scale: tb.k0/k4 screen size, SpriteBatch.Begin, the world batch's MatrixTransform, ScissorRectangle,
+//   Mouse.GetState, bso.abb cursor warp and the loading screen's size reads -> UiScaleFix (UiScale.cs)
+//   insets: ci3 sizing / shaking the world view, daj.iz (in-game surface mouse bounds), a7m.b floor position, d0p full-screen dim -> UiScaleFix.FullScreen / WorldLocation(Get) / InScreen / FloorOrigin / DimRect
+//   b5r zoom label, mv SHIFT+wheel and ci3 zoom-button steps -> UnderrailDisplayModes.ShownZoom / ZoomStep
+using System;
+using System.IO;
+using System.Linq;
+using Mono.Cecil;
+using Mono.Cecil.Cil;
+
+static class Patcher
+{
+    const string Exe = "underrail.exe", Backup = "underrail.exe.backup", Runtime = "UnderrailFix.dll";
+
+    static int Main(string[] args)
+    {
+        bool uninstall = args.Any(a => a == "--uninstall" || a == "-u");
+        string dir = args.FirstOrDefault(a => !a.StartsWith("-")) ?? FindGame();
+        int code;
+        try
+        {
+            if (dir == null || !File.Exists(Path.Combine(dir, Exe)))
+                throw new Exception("Couldn't find " + Exe + ". Put the patcher in the UnderRail folder, or pass the folder as an argument.");
+            code = uninstall ? Uninstall(dir) : Install(dir);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Error: " + ex.Message);
+            code = 1;
+        }
+        if (args.Length == 0 && !Console.IsInputRedirected)
+        {
+            Console.WriteLine("Press Enter to close.");
+            Console.ReadLine();
+        }
+        return code;
+    }
+
+    static string FindGame()
+    {
+        foreach (string d in new[] { AppDomain.CurrentDomain.BaseDirectory, Environment.CurrentDirectory })
+            if (File.Exists(Path.Combine(d, Exe))) return d;
+        return null;
+    }
+
+    static string Version(ModuleDefinition fix)
+    {
+        return (string)fix.GetType("FixVersion").Fields.Single(f => f.Name == "Value").Constant;
+    }
+
+    static bool IsPatched(string path)
+    {
+        using (var m = ModuleDefinition.ReadModule(path))
+            return m.AssemblyReferences.Any(r => r.Name == "UnderrailFix");
+    }
+
+    static int Install(string dir)
+    {
+        string exe = Path.Combine(dir, Exe), backup = Path.Combine(dir, Backup), runtime = Path.Combine(dir, Runtime);
+        // The patcher normally sits next to its own copy of the runtime; install/refresh it in the game folder.
+        string here = AppDomain.CurrentDomain.BaseDirectory;     // on Linux the patcher binary is in linux/
+        string bundled = new[] { here, Path.Combine(here, "..") }.Select(d => Path.Combine(d, Runtime)).FirstOrDefault(File.Exists) ?? Path.Combine(here, Runtime);
+        if (File.Exists(bundled) && !string.Equals(Path.GetFullPath(bundled), Path.GetFullPath(runtime), StringComparison.OrdinalIgnoreCase))
+            File.Copy(bundled, runtime, true);
+        if (!File.Exists(runtime)) throw new Exception(Runtime + " is missing; copy it next to " + Exe + ".");
+
+        string source;
+        if (IsPatched(exe))
+        {
+            // Already patched: redo it from the backup, e.g. after updating UnderrailFix.dll.
+            if (!File.Exists(backup) || IsPatched(backup)) throw new Exception(Exe + " is already patched and there is no original backup to patch from.");
+            source = backup;
+            Console.WriteLine("Updating the existing patch from " + Backup + ".");
+        }
+        else
+        {
+            // A stock exe: the first install, or the game was updated / verified since. Keep this one as the backup.
+            File.Copy(exe, backup, true);
+            source = backup;
+            Console.WriteLine("Backed up the original as " + Backup + ".");
+        }
+
+        byte[] patched = Patch(source, runtime);
+        string temp = exe + ".new";
+        File.WriteAllBytes(temp, patched);
+        File.Copy(temp, exe, true);
+        File.Delete(temp);
+        string version;
+        using (var m = ModuleDefinition.ReadModule(runtime)) version = Version(m);
+        Console.WriteLine("Patched " + Exe + " with UnderrailFix " + version + ". Settings: UnderrailFix.ini (created on the next launch).");
+        Console.WriteLine("To undo: run the patcher with --uninstall, or copy " + Backup + " back over " + Exe + ".");
+        return 0;
+    }
+
+    static int Uninstall(string dir)
+    {
+        string exe = Path.Combine(dir, Exe), backup = Path.Combine(dir, Backup);
+        if (!IsPatched(exe))
+        {
+            // Steam (an update or "Verify files") already put the original back; the old backup is out of date.
+            if (File.Exists(backup)) { File.Delete(backup); Console.WriteLine(Exe + " is already the original; removed the outdated " + Backup + "."); }
+            else Console.WriteLine(Exe + " isn't patched; nothing to do.");
+            Console.WriteLine("You can now delete UnderrailFix.dll, UnderrailFix.ini and UnderrailFix.log.");
+            return 0;
+        }
+        if (!File.Exists(backup)) throw new Exception("No " + Backup + " to restore. Use Steam's \"Verify integrity of game files\" (or reinstall) instead.");
+        File.Copy(backup, exe, true);
+        File.Delete(backup);
+        Console.WriteLine("Restored the original " + Exe + ". You can now delete UnderrailFix.dll, UnderrailFix.ini and UnderrailFix.log.");
+        return 0;
+    }
+
+    static byte[] Patch(string exe, string runtime)
+    {
+        var resolver = new DefaultAssemblyResolver();
+        resolver.AddSearchDirectory(Path.GetDirectoryName(exe));
+        byte[] original = File.ReadAllBytes(exe);
+        var asm = AssemblyDefinition.ReadAssembly(new MemoryStream(original), new ReaderParameters { AssemblyResolver = resolver });
+        var module = asm.MainModule;
+        var fix = ModuleDefinition.ReadModule(runtime, new ReaderParameters { AssemblyResolver = resolver });
+        Func<string, string, MethodReference> hook = (type, name) => module.ImportReference(fix.GetType(type).Methods.Single(m => m.Name == name));
+
+        // Video settings: the resolution read from / written to config.dat passes through ResolutionStore.
+        var cnt = module.GetType("cnt");
+        var resolutionField = cnt.Fields.Single(f => f.Name == "a" && f.FieldType.Name == "DisplayResolution");
+        foreach (var ctor in cnt.Methods.Where(m => m.IsConstructor && !m.IsStatic))
+            foreach (var set in ctor.Body.Instructions.Where(i => i.OpCode == OpCodes.Stfld && i.Operand == resolutionField).ToList())
+            {
+                bool fromConfig = set.Previous.OpCode == OpCodes.Unbox_Any;     // (DisplayResolution)info.GetValue("VS:R", ...)
+                ctor.Body.GetILProcessor().InsertBefore(set, Instruction.Create(OpCodes.Call, hook("ResolutionStore", fromConfig ? "Load" : "Default")));
+            }
+        var save = cnt.Methods.Single(m => m.Name == "GetObjectData");
+        var written = save.Body.Instructions.Single(i => i.OpCode == OpCodes.Ldfld && i.Operand == resolutionField);
+        save.Body.GetILProcessor().InsertAfter(written, Instruction.Create(OpCodes.Call, hook("ResolutionStore", "Save")));
+
+        {
+            var efw = module.GetType("efw");
+            var table = efw.Fields.Single(f => f.IsStatic && f.FieldType.Name.StartsWith("Dictionary"));
+            var list = efw.Methods.Single(m => m.Name == "a" && m.Parameters.Count == 0 && m.ReturnType.Name.StartsWith("List"));
+            var get = efw.Methods.Single(m => m.Name == "a" && m.Parameters.Count == 1 && m.Parameters[0].ParameterType.Name == "DisplayResolution");
+            Replace(list, il => { il.Emit(OpCodes.Ldsfld, table); il.Emit(OpCodes.Call, hook("UnderrailDisplayModes", "List")); il.Emit(OpCodes.Ret); });
+            Replace(get, il => { il.Emit(OpCodes.Ldsfld, table); il.Emit(OpCodes.Ldarg_0); il.Emit(OpCodes.Call, hook("UnderrailDisplayModes", "Get")); il.Emit(OpCodes.Ret); });
+
+            var label = module.GetType("egd").Methods.Single(m => m.Name == "ToString");
+            Replace(label, il => { il.Emit(OpCodes.Ldarg_0); il.Emit(OpCodes.Call, hook("UnderrailDisplayModes", "Label")); il.Emit(OpCodes.Ret); });
+
+            AppendCall(module.GetType("aw9"), "a", hook("UnderrailDropdownScroll", "Opened"));
+            AppendCall(module.GetType("aw9"), "b", hook("UnderrailDropdownScroll", "Closed"));
+        }
+
+        {
+            // dka.b sets the zoom limits every frame: ud(1f) minimum, uf(2f) and, on wide views, uf(3f) maximum.
+            int limits = 0;
+            foreach (var m in module.GetType("dka").Methods.Where(m => m.HasBody))
+                foreach (var i in m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ldc_R4 && i.Next != null && i.Next.Operand is MethodReference r && (r.Name == "ud" || r.Name == "uf") && r.DeclaringType.Name == "c5m").ToList())
+                {
+                    bool min = ((MethodReference)i.Next.Operand).Name == "ud";
+                    i.OpCode = OpCodes.Call; i.Operand = hook("UnderrailDisplayModes", min ? "MinZoom" : "MaxZoom"); limits++;
+                }
+            Expect("zoom limits", limits, 3);
+        }
+
+        // FixStartup.Run(version) runs before anything else in Main: version check against the DLL, DPI awareness.
+        var main = module.EntryPoint;
+        var mainIl = main.Body.GetILProcessor();
+        var first = main.Body.Instructions[0];
+        mainIl.InsertBefore(first, Instruction.Create(OpCodes.Ldstr, Version(fix)));
+        mainIl.InsertBefore(first, Instruction.Create(OpCodes.Call, hook("FixStartup", "Run")));
+
+        // Options: an UnderrailFix tab after the game's (end of t1.h), saved with Accept (end of t1.d) and applied once
+        // the game has applied its own options (end of d6f.a(ls)).
+        var options = module.GetType("t1");
+        AppendCall(options, "h", hook("UnderrailOptions", "AddTab"));
+        AppendCall(options, "d", hook("UnderrailOptions", "Save"));
+        var apply = module.GetType("d6f").Methods.Single(m => m.Name == "a" && m.Parameters.Count == 1 && m.Parameters[0].ParameterType.Name == "ls" && !m.IsStatic);
+        var applyIl = apply.Body.GetILProcessor();
+        foreach (var ret in apply.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList())
+        {
+            // As in AppendCall: the call takes the ret's place, so branches to it still run the hook.
+            applyIl.InsertAfter(ret, Instruction.Create(OpCodes.Ret));
+            ret.OpCode = OpCodes.Call; ret.Operand = hook("UnderrailOptions", "Applied");
+        }
+
+        // UiScale: virtual screen size, scaled drawing, clip rectangles and mouse (see UiScale.cs).
+        var tb = module.GetType("tb");
+        foreach (string size in new[] { "k0", "k4" })     // bef: back buffer size, requested size
+            foreach (var ret in tb.Methods.Single(m => m.Name == size && m.Parameters.Count == 0).Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList())
+                tb.Methods.Single(m => m.Name == size && m.Parameters.Count == 0).Body.GetILProcessor().InsertBefore(ret, Instruction.Create(OpCodes.Call, hook("UiScaleFix", "Virtual")));
+        var draw = tb.Methods.Single(m => m.Name == "Draw");
+        int loading = 0;
+        foreach (var i in draw.Body.Instructions.Where(i => i.Operand is MethodReference r && (r.Name == "get_PreferredBackBufferWidth" || r.Name == "get_PreferredBackBufferHeight")).ToList())
+        {
+            draw.Body.GetILProcessor().InsertAfter(i, Instruction.Create(OpCodes.Call, hook("UiScaleFix", ((MethodReference)i.Operand).Name.EndsWith("Width") ? "VirtualWidth" : "VirtualHeight")));
+            loading++;
+        }
+        Expect("loading screen size reads", loading, 2);
+
+        int begins = 0, scissors = 0, mice = 0, transforms = 0;
+        foreach (var type in module.GetTypes())
+            foreach (var m in type.Methods.Where(m => m.HasBody))
+                foreach (var i in m.Body.Instructions.ToList())
+                {
+                    var r = i.Operand as MethodReference;
+                    if (r == null) continue;
+                    string owner = r.DeclaringType.FullName;
+                    if (owner == "Microsoft.Xna.Framework.Graphics.SpriteBatch" && r.Name == "Begin")
+                    {
+                        if (r.Parameters.Count != 5 && r.Parameters.Count != 6) throw new Exception("unexpected SpriteBatch.Begin overload in " + type.Name + "." + m.Name);
+                        i.OpCode = OpCodes.Call; i.Operand = hook("UiScaleFix", r.Parameters.Count == 5 ? "Begin5" : "Begin6"); begins++;
+                    }
+                    else if (owner == "Microsoft.Xna.Framework.Graphics.GraphicsDevice" && (r.Name == "set_ScissorRectangle" || r.Name == "get_ScissorRectangle"))
+                    {
+                        i.OpCode = OpCodes.Call; i.Operand = hook("UiScaleFix", r.Name.StartsWith("set") ? "SetScissor" : "GetScissor"); scissors++;
+                    }
+                    else if (owner == "Microsoft.Xna.Framework.Input.Mouse" && r.Name == "GetState" && r.Parameters.Count == 0)
+                    {
+                        i.OpCode = OpCodes.Call; i.Operand = hook("UiScaleFix", "GetMouse"); mice++;
+                    }
+                    else if (type.Name.StartsWith("UrGenericSpriteBatchBase") && r.Name == "SetValue" && owner.EndsWith("EffectParameter")
+                             && i.Previous.Operand is FieldReference f && f.FieldType.Name == "Matrix" && i.Previous.OpCode == OpCodes.Ldfld)
+                    {
+                        // MatrixTransform (the pixel-to-clip projection); the dither matrix is a local, not a field.
+                        m.Body.GetILProcessor().InsertBefore(i, Instruction.Create(OpCodes.Call, hook("UiScaleFix", "Transform"))); transforms++;
+                    }
+                }
+        var zoomLabel = module.GetType("b5r").Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions.Where(i => i.Operand is MethodReference r && r.Name == "aq8").Select(i => new { m, i })).ToList();
+        foreach (var x in zoomLabel) x.m.Body.GetILProcessor().InsertAfter(x.i, Instruction.Create(OpCodes.Call, hook("UnderrailDisplayModes", "ShownZoom")));
+        Expect("zoom label", zoomLabel.Count, 1);
+        // mv: SHIFT+wheel calls an9().uo(notches * step); scale the step to the screen.
+        var wheel = module.GetType("mv").Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions.Where(i => i.Operand is MethodReference r && r.Name == "uo" && r.DeclaringType.Name == "c5m").Select(i => new { m, i })).ToList();
+        foreach (var x in wheel) x.m.Body.GetILProcessor().InsertBefore(x.i, Instruction.Create(OpCodes.Call, hook("UnderrailDisplayModes", "ZoomStep")));
+        Expect("zoom wheel step", wheel.Count, 1);
+        // ci3's zoom buttons: aq9(aq8() -/+ 0.25f), the same step as the wheel (ci3 sets the view's wheel step to 0.25).
+        var buttons = module.GetType("ci3").Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions.Where(i => i.OpCode == OpCodes.Ldc_R4 && (float)i.Operand == 0.25f
+            && i.Previous != null && i.Previous.Operand is MethodReference r && r.Name == "aq8" && i.Next != null && (i.Next.OpCode == OpCodes.Add || i.Next.OpCode == OpCodes.Sub)).Select(i => new { m, i })).ToList();
+        foreach (var x in buttons) x.m.Body.GetILProcessor().InsertAfter(x.i, Instruction.Create(OpCodes.Call, hook("UnderrailDisplayModes", "ZoomStep")));
+        Expect("zoom button steps", buttons.Count, 2);
+        // bso.abb(Point): moves the cursor (SetCursorPos), given UI coordinates.
+        var warp = module.GetType("bso").Methods.Single(m => m.Name == "abb" && m.Parameters.Count == 1 && m.Parameters[0].ParameterType.Name == "Point");
+        var warpIl = warp.Body.GetILProcessor();
+        var warpStart = warp.Body.Instructions[0];
+        warpIl.InsertBefore(warpStart, Instruction.Create(OpCodes.Ldarg_1));
+        warpIl.InsertBefore(warpStart, Instruction.Create(OpCodes.Call, hook("UiScaleFix", "ToScreen")));
+        warpIl.InsertBefore(warpStart, Instruction.Create(OpCodes.Starg_S, warp.Parameters[0]));
+        // Insets: ci3 (the in-game surface) must keep the world view on the whole screen and take the mouse there.
+        var gametop = module.GetType("ci3");
+        var sizing = gametop.Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions.Where(i => i.Operand is MethodReference r && r.DeclaringType.Name == "a2x" && r.Name == "c"
+            && i.Previous.OpCode == OpCodes.Ldfld && ((FieldReference)i.Previous.Operand).FieldType.Name == "mv")).ToList();
+        foreach (var i in sizing) { i.OpCode = OpCodes.Call; i.Operand = hook("UiScaleFix", "FullScreen"); }
+        Expect("world view sizing", sizing.Count, 1);
+        // The screen shake: ci3.iv (its draw) moves the world view by a random offset and back to 0,0. The Location
+        // setter's name is obfuscated, so it is found through the property.
+        var setLocation = module.GetType("euz").Properties.Single(p => p.Name == "Location").SetMethod;
+        var shake = gametop.Methods.Single(m => m.Name == "iv" && m.HasBody).Body.Instructions
+            .Where(i => i.Operand is MethodReference r && r.Name == setLocation.Name && r.DeclaringType.Name == "euz").ToList();
+        Expect("world view shake moves", shake.Count, 2);
+        foreach (var i in shake) { i.OpCode = OpCodes.Call; i.Operand = hook("UiScaleFix", "WorldLocation"); }
+        var getLocation = module.GetType("euz").Properties.Single(p => p.Name == "Location").GetMethod;
+        var shakeCheck = gametop.Methods.Single(m => m.Name == "iv" && m.HasBody).Body.Instructions
+            .Where(i => i.Operand is MethodReference r && r.Name == getLocation.Name && r.DeclaringType.Name == "euz").ToList();
+        Expect("world view shake check", shakeCheck.Count, 1);
+        foreach (var i in shakeCheck) { i.OpCode = OpCodes.Call; i.Operand = hook("UiScaleFix", "WorldLocationGet"); }
+        // d0p.a(cp9, Color, Rectangle, bool, bool): the fill popups dim the whole screen with (see DimRect).
+        var dim = module.GetType("d0p").Methods.Single(m => m.Name == "a" && m.IsStatic && m.Parameters.Count == 5 && m.Parameters[2].ParameterType.Name == "Rectangle");
+        var dimIl = dim.Body.GetILProcessor();
+        var dimStart = dim.Body.Instructions[0];
+        dimIl.InsertBefore(dimStart, Instruction.Create(OpCodes.Ldarg_2));
+        dimIl.InsertBefore(dimStart, Instruction.Create(OpCodes.Call, hook("UiScaleFix", "DimRect")));
+        dimIl.InsertBefore(dimStart, Instruction.Create(OpCodes.Starg_S, dim.Parameters[2]));
+        // a7m.b(int, int) -> Vector2: mouse to floor position, mixing view-relative and screen coordinates (see FloorOrigin).
+        var floor = module.GetType("a7m").Methods.Single(m => m.Name == "b" && m.Parameters.Count == 2 && m.Parameters.All(p => p.ParameterType.MetadataType == MetadataType.Int32) && m.ReturnType.Name == "Vector2");
+        var floorAt = floor.Body.Instructions.Where(i => i.Operand is MethodReference r && r.Name == "at" && r.Parameters.Count == 0).ToList();
+        Expect("floor position at() reads", floorAt.Count, 1);
+        floorAt[0].OpCode = OpCodes.Call; floorAt[0].Operand = hook("UiScaleFix", "FloorOrigin");
+        var surface = module.GetType("daj").Methods.Single(m => m.Name == "iz");
+        Replace(surface, il2 => { il2.Emit(OpCodes.Ldarg_1); il2.Emit(OpCodes.Call, hook("UiScaleFix", "InScreen")); il2.Emit(OpCodes.Ret); });
+
+        Expect("SpriteBatch.Begin calls", begins, 2);
+        Expect("scissor rectangle reads/writes", scissors, 11);
+        Expect("Mouse.GetState calls", mice, 7);
+        Expect("world batch projections", transforms, 1);
+
+        var ms = new MemoryStream();
+        asm.Write(ms);
+        byte[] image = ms.ToArray();
+        // Cecil drops IMAGE_FILE_LARGE_ADDRESS_AWARE and friends; keep the original COFF characteristics.
+        Array.Copy(original, Coff(original), image, Coff(image), 2);
+        return image;
+    }
+
+    // Each patch must find exactly what this version of the game has, or nothing is written.
+    static void Expect(string what, int found, int expected)
+    {
+        if (found != expected) throw new Exception("this game version isn't supported (" + what + ": found " + found + ", expected " + expected + ")");
+    }
+
+    static int Coff(byte[] pe) { return BitConverter.ToInt32(pe, 0x3C) + 4 + 18; }
+
+    // Calls hook(this) just before every return of type.name(), the instance void method without parameters.
+    static void AppendCall(TypeDefinition type, string name, MethodReference hook)
+    {
+        var method = type.Methods.Single(m => m.Name == name && m.Parameters.Count == 0 && m.ReturnType.MetadataType == MetadataType.Void && !m.IsStatic);
+        var il = method.Body.GetILProcessor();
+        foreach (var ret in method.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList())
+        {
+            // Branches into the old ret now land on the inserted call, since it takes the ret's place.
+            il.InsertAfter(ret, Instruction.Create(OpCodes.Ret));
+            il.InsertAfter(ret, Instruction.Create(OpCodes.Call, hook));
+            ret.OpCode = OpCodes.Ldarg_0; ret.Operand = null;
+        }
+    }
+
+    static void Replace(MethodDefinition m, Action<ILProcessor> emit)
+    {
+        var body = m.Body;
+        body.Instructions.Clear();
+        body.ExceptionHandlers.Clear();
+        body.Variables.Clear();
+        body.InitLocals = false;
+        emit(body.GetILProcessor());
+    }
+}

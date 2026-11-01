@@ -1,0 +1,7 @@
+# Build output (build.sh); releases are built from source, not committed.
+build/
+dist/
+# Never commit decompiled game code or the game's files.
+*.exe
+*.dll
+*.xnb
