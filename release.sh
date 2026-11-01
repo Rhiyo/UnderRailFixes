@@ -2,7 +2,8 @@
 # Makes a GitHub release of UnderRailFixes from this machine, the same way every time:
 #   ./release.sh 1.2.0 "What changed, in a sentence or a paragraph."
 #   ./release.sh 1.2.0 -F notes.md          (description from a file)
-# It refuses to run unless the tree is clean, on main, in sync with origin, and the version is new. Then it stamps
+# It refuses to run unless the tree is clean, on main or a release/* branch, in sync with origin, and the version
+# is new. Then it stamps
 # the version, builds from scratch, runs tools/check-release.sh, packages the zip with the licence notices, writes
 # the release notes (your description + game version read from the exe + install steps + checksum), tags, pushes
 # and publishes with gh. Any failure stops it before anything is pushed.
@@ -23,10 +24,13 @@ die() { echo "release: $*" >&2; exit 1; }
 
 # 1. Preconditions.
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must look like 1.2.3"
-[ "$(git branch --show-current)" = main ] || die "not on main"
+# main, or a release/* branch (fixes for an older release line without what's on main since)
+BRANCH="$(git branch --show-current)"
+case "$BRANCH" in main|release/*) ;; *) die "not on main or a release/* branch";; esac
 [ -z "$(git status --porcelain)" ] || die "working tree not clean (commit or stash first)"
 git fetch -q origin
-[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "main is not in sync with origin/main (pull/push first)"
+git rev-parse -q --verify "origin/$BRANCH" >/dev/null || die "$BRANCH isn't on GitHub yet (git push -u origin $BRANCH)"
+[ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$BRANCH")" ] || die "$BRANCH is not in sync with origin/$BRANCH (pull/push first)"
 git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null && die "tag v$VERSION already exists"
 git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null && die "tag v$VERSION already exists on GitHub"
 gh auth status >/dev/null 2>&1 || die "gh is not logged in"
@@ -103,6 +107,6 @@ EOF
 if [ -n "$(git status --porcelain -- "$VFILE")" ]; then git commit -q -m "Release v$VERSION" -- "$VFILE"; fi
 committed=1
 git tag -a "v$VERSION" -m "UnderRailFixes $VERSION (UnderRail $GAME_VERSION)"
-git push -q origin main "v$VERSION"
+git push -q origin "$BRANCH" "v$VERSION"
 gh release create "v$VERSION" "$ZIP" --repo "$REPO" --title "UnderRailFixes $VERSION" --notes-file "$NOTES"
 echo "Released v$VERSION: https://github.com/$REPO/releases/tag/v$VERSION"
