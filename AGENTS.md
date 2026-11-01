@@ -259,6 +259,11 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 - Cecil can't rewrite an assembly inside the bundled Linux patcher when that needs resolving mscorlib (e.g. enum
   constants): it has no mscorlib on disk. Do such rewrites at build time (that's why `UnderrailFix64.dll` is built,
   not made by the patcher).
+- **Test launches from Steam, not just `proton` directly**: Steam runs the game inside the Steam Linux Runtime
+  container (`SteamLinuxRuntime_4/_v2-entry-point --verb=waitforexitandrun -- proton ...`). There the 64-bit Wine
+  Mono can't load .NET config ("Couldn't impersonate token"), which killed the game at its first `Trace.WriteLine`
+  (`FnaMode.DiagnosticsSettings` works around it); outside the container it worked. The game's console output from
+  a Steam launch ends up in `~/.local/share/Steam/logs/console-linux.txt`.
 - The test copy and the Steam game share one Proton prefix, so **a test build writes the player's real config.dat
   and saves**. Check what a change writes before testing it there (see the rule on files the game writes).
 

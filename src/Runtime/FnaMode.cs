@@ -77,6 +77,25 @@ public static class FnaMode
         SetDllDirectory(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "x64"));
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FNA3D_FORCE_DRIVER"))) Environment.SetEnvironmentVariable("FNA3D_FORCE_DRIVER", "D3D11");
         Log.Write("64-bit FNA mode: " + Fna + ", FNA3D driver " + Environment.GetEnvironmentVariable("FNA3D_FORCE_DRIVER"));
+        DiagnosticsSettings();
+    }
+
+    // The game logs through Trace.WriteLine, whose first call loads the diagnostics settings from the app's config
+    // files. In the 64-bit process inside Steam's Linux runtime container (Proton launched by Steam), Wine Mono's
+    // config system fails there ("Couldn't impersonate token") and the game dies in tb.Initialize. The game has no
+    // config file, so the settings are the defaults anyway: if loading them fails, mark them loaded (initState =
+    // Initialized, no section) so Trace uses the defaults. Where loading works nothing changes.
+    static void DiagnosticsSettings()
+    {
+        try { System.Configuration.ConfigurationManager.GetSection("system.diagnostics"); return; }
+        catch (Exception ex) { Log.Write("diagnostics settings can't be loaded (" + ex.GetBaseException().Message + "); using the defaults"); }
+        try
+        {
+            var config = typeof(System.Diagnostics.Trace).Assembly.GetType("System.Diagnostics.DiagnosticsConfiguration");
+            var state = config.GetField("initState", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            state.SetValue(null, Enum.ToObject(state.FieldType, 2));     // InitState.Initialized
+        }
+        catch (Exception ex) { Log.Write("diagnostics settings: " + ex.Message); }
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool SetDllDirectory(string path);
