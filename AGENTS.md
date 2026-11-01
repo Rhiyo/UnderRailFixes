@@ -19,7 +19,7 @@ Fixes (README.md has the player-facing description):
 | Interface | `UiScaleFix`, `UiScale`, `UiInsetX`, `UiInsetY` | whole-UI scale (auto = whole multiples of the shorter side / 2160), insets that centre the UI while the world stays full-screen |
 | Menu backgrounds | `BackgroundFit` | 0 = the game's crop; 1 = whole image, letterboxed (backgrounds ignore insets either way) |
 | DPI | `DpiAware` | Windows only: per-monitor DPI awareness before the window exists |
-| Frame rate | `FrameRateFix`, `MaxFps` | no fixed 60 Hz timestep (0) or a fixed one at MaxFps |
+| Frame rate | `FrameRateFix` (**default off**: not tested thoroughly), `MaxFps` | no fixed 60 Hz timestep (0) or a fixed one at MaxFps |
 | Log | `Log` | 0 (default) = no log file; 1 = `UnderrailFix.log` |
 
 In game: **Options -> Fixes** tab with a group per enabled fix; applies on Accept; scale/inset changes get a

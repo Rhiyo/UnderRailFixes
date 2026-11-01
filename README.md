@@ -6,7 +6,7 @@ Display fixes for UnderRail, for ultrawide and other resolutions the game doesn'
 - **Insets:** the HUD and menus can be moved in from the screen's edges into a centred area, while the world still fills the screen.
 - **Interface scale:** the interface can be scaled beyond the game's largest Interface Size, automatically on screens above 4K.
 - **Zoom fix:** the world is the same size on every screen, as it is at 1080p, with more room to zoom out. The zoom indicator shows the same numbers as at 1080p.
-- **Frame rate:** no more 60 FPS cap; runs at your monitor's refresh rate, with an optional cap.
+- **Frame rate (off by default, not tested thoroughly yet):** no more 60 FPS cap; runs at your monitor's refresh rate, with an optional cap.
 - **Menu backgrounds:** optionally show the whole menu art instead of the game's crop.
 - **In-game settings:** an **Options → Fixes** tab; changes apply without restarting.
 
@@ -56,7 +56,7 @@ UiInsetX=0        ; space kept clear at the left and right edges (total, split e
 UiInsetY=0        ; same for the top and bottom
 DpiAware=1        ; Windows only: stop Windows display scaling from stretching the game
 BackgroundFit=0   ; menu backgrounds: 0 = fill the screen, cropping the art (as the game does); 1 = show the whole image, never stretched
-FrameRateFix=1    ; 1 = no 60 FPS cap; 0 = the game's fixed 60
+FrameRateFix=0    ; 1 = no 60 FPS cap (off by default: not tested thoroughly yet); 0 = the game's fixed 60
 MaxFps=0          ; with FrameRateFix=1: 0 = no cap (with VSync: your refresh rate), or a cap such as 120
 Log=0             ; 1 = write UnderrailFix.log (for bug reports)
 ```
@@ -105,7 +105,9 @@ The game crops its menu art to fill the screen (it ships the art in several shap
 
 ### Frame rate
 
-The game runs at a fixed 60 updates and frames per second (XNA's default), whatever your monitor. With `FrameRateFix=1` that limit is gone: the game's timing is based on elapsed time, so it plays at normal speed at any frame rate (tested at 240 on a 240 Hz monitor). **Options → Fixes → Frame rate cap** (or `MaxFps`) sets an optional cap: Unlimited, 30, 60, 120, 144, 165 or 240.
+> **Not tested thoroughly yet**, so it's off by default. Turn it on with `FrameRateFix=1` in `UnderrailFix.ini`. If anything in the game runs too fast or too slow with it, please report it.
+
+The game runs at a fixed 60 updates and frames per second (XNA's default), whatever your monitor. With `FrameRateFix=1` that limit is gone: the game's timing is based on elapsed time, so it plays at normal speed at any frame rate (tested at 240 on a 240 Hz monitor). With it on, **Options → Fixes → Frame rate cap** (or `MaxFps`) sets an optional cap: Unlimited, 30, 60, 120, 144, 165 or 240.
 
 | Game's VSync | Cap | Frame rate |
 |---|---|---|
