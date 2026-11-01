@@ -31,6 +31,7 @@ game_copy() {
 STOCK=$(md5 "$ORIG")
 
 EXPECTED="FixStartup.Run
+FrameRate.Apply
 ResolutionStore.Default
 ResolutionStore.Load
 ResolutionStore.Save

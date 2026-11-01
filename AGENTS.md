@@ -19,6 +19,7 @@ Fixes (README.md has the player-facing description):
 | Interface | `UiScaleFix`, `UiScale`, `UiInsetX`, `UiInsetY` | whole-UI scale (auto = whole multiples of the shorter side / 2160), insets that centre the UI while the world stays full-screen |
 | Menu backgrounds | `BackgroundFit` | 0 = the game's crop; 1 = whole image, letterboxed (backgrounds ignore insets either way) |
 | DPI | `DpiAware` | Windows only: per-monitor DPI awareness before the window exists |
+| Frame rate | `FrameRateFix`, `MaxFps` | no fixed 60 Hz timestep (0) or a fixed one at MaxFps |
 | Log | `Log` | 0 (default) = no log file; 1 = `UnderrailFix.log` |
 
 In game: **Options -> Fixes** tab with a group per enabled fix; applies on Accept; scale/inset changes get a
@@ -137,6 +138,14 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 - Interface sizes are hand-made per tier: atlases `gui/ui_s|l|h_gen1`, cursors `cursors_s|l|h`, bitmap fonts in
   `data/fonts`, ~330 lines of pixel layout per tier in `wj`. No continuous scale exists in the game.
 
+### Timing
+
+- The game never sets `IsFixedTimeStep`/`TargetElapsedTime`, so XNA's default fixed 1/60 s caps it at 60 FPS. Its
+  systems take elapsed time from `GameTime` (passed down via `e6d`; e.g. `d6f.d1` -> `es6` world ticks), nothing reads
+  `TargetElapsedTime`, and in game it plays at normal speed at 240 FPS (frame-counting logic would have run 4x fast), so a
+  variable timestep is safe. Not yet tried: a 30 FPS cap (would show frame-bound logic as half speed).
+- VSync is the game's option `VS:V` -> `GraphicsDeviceManager.SynchronizeWithVerticalRetrace` (`tb.k7`).
+
 ### Zoom
 
 - `dka.b` (per frame) sets the camera limits: `ud(1f)` min, `uf(2f)` and `uf(3f)` when the view is wider than 1920.
@@ -150,6 +159,7 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 
 | Game | Hook | Purpose |
 |---|---|---|
+| Game subclass ctor (`enu`, first `newobj` in Main) | `FrameRate.Apply(object)` | IsFixedTimeStep / TargetElapsedTime |
 | entry `Main` (`b7i.a`) | `FixStartup.Run(version)` | version check, DPI awareness. **Signature must never change.** |
 | `cnt` ctors / `GetObjectData` | `ResolutionStore.Default/Load/Save` | resolution via ini; config.dat stays vanilla-valid |
 | `efw.a()` / `efw.a(key)` | `UnderrailDisplayModes.List/Get` | monitor modes, nearest-size fallback |
@@ -205,15 +215,18 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
   screenshots: 4K and 8K should look identical.
 - Done: 5120x1440 native, 4K and 8K (UI 200%, right-drag fixed), insets (floor clicks, edge clicks, Escape dim),
   options tab basics, keep/revert countdown, zoom steps (wheel and buttons equal).
-- Not yet: the latest background change in game (picture drawn full-screen/letterboxed while the main menu's
+- Not yet: the Frame rate cap dropdown in game, the latest background change in game (picture drawn full-screen/letterboxed while the main menu's
   panel stays inset), portrait, the Windows patcher and `DpiAware` on real Windows, the keep/revert countdown in all paths,
   older glibc distros for the Linux patcher.
 
 ## Open ideas
 
-- Frame rate / high refresh (fixed timestep) - not looked at yet.
-- 64-bit: possible only with 64-bit builds of every native DLL, including a rewrite of Styg's closed
-  `SteamHelper.dll` (9 functions over Steamworks). Not worth it while 4 GB (LAA) is enough.
+- 64-bit: the exe is x86 + 32BITREQUIRED; clearing that runs the managed code as 64-bit (Wine starts IL-only exes as
+  64-bit), but every native DLL is 32-bit: CSFML audio/window (old SFML 2.0/2.1, VC9 build, matching the sfmlnet
+  bindings), OpenAL Soft, libsndfile 1.0.24, steam_api.dll (02.01.77.37) and Styg's closed SteamHelper.dll (9
+  functions). 64-bit SFML/OpenAL/libsndfile could be shipped; SteamHelper would need a rewrite; steam_api64.dll may
+  only be redistributed by Steamworks partners, and without it there is no Steam integration or achievements.
+  The exe is LAA (4 GB), so the gain is small unless out-of-memory crashes appear. Parked.
 - Sharper scaled text: re-render the bitmap fonts from their original TTFs at the scaled size; UI art would need
   upscaling (it's painted, not vector).
 - Naming: rename files/assembly to UnderRailFixes. The patcher detects a patched exe by its reference to the

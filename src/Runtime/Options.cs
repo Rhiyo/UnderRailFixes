@@ -25,7 +25,7 @@ enum StyleOnly { A }
 public static class UnderrailOptions
 {
     const string TabName = "Fixes";
-    sealed class Rows { public aw9 Scale, InsetX, InsetY, Background, ZoomDefault, ZoomMin, ZoomMax; }
+    sealed class Rows { public aw9 Scale, InsetX, InsetY, Background, ZoomDefault, ZoomMin, ZoomMax, MaxFps; }
     static readonly ConditionalWeakTable<t1, Rows> Added = new ConditionalWeakTable<t1, Rows>();
     static bool relayout;
     static Dictionary<string, string> confirm;     // interface settings to put back unless the player keeps them
@@ -66,6 +66,8 @@ public static class UnderrailOptions
 
     static FixChoice CurrentBackground() { return new FixChoice("", FixSettings.BackgroundFit ? "1" : "0"); }
 
+    static FixChoice CurrentFps() { int f = FixSettings.MaxFps; return f > 0 ? new FixChoice(f + " FPS", f.ToString()) : new FixChoice("Unlimited", "0"); }
+
     static FixChoice Zoom(int p) { return new FixChoice(p + "%", p.ToString()); }
 
     static aw9 Add(t1 options, string label, IEnumerable<FixChoice> standard, FixChoice current, FixChoice fallback)
@@ -82,7 +84,7 @@ public static class UnderrailOptions
     // End of t1.h: our tab, after the game's own, with a group per fix that is switched on (none: no tab).
     public static void AddTab(t1 options)
     {
-        if (!FixSettings.UiScaleFix && !FixSettings.ZoomFix) return;
+        if (!FixSettings.UiScaleFix && !FixSettings.ZoomFix && !FixSettings.FrameRateFix) return;
         try
         {
             var page = new cvh();
@@ -118,6 +120,12 @@ public static class UnderrailOptions
                 rows.ZoomMin = Add(options, "Zoom out limit", zooms, Zoom(FixSettings.ZoomMin), Zoom(FixSettings.DefaultZoomMin));
                 rows.ZoomMax = Add(options, "Zoom in limit", zooms, Zoom(FixSettings.ZoomMax), Zoom(FixSettings.DefaultZoomMax));
             }
+            if (FixSettings.FrameRateFix)
+            {
+                group("Frame rate");
+                var caps = new[] { new FixChoice("Unlimited", "0") }.Concat(new[] { 30, 60, 120, 144, 165, 240 }.Select(f => new FixChoice(f + " FPS", f.ToString()))).ToList();
+                rows.MaxFps = Add(options, "Frame rate cap", caps, CurrentFps(), caps[0]);
+            }
             EndTab.Invoke(options, null);
             StartTab.Invoke(options, null);
             Added.Remove(options);
@@ -143,6 +151,7 @@ public static class UnderrailOptions
             relayout |= Write(rows.ZoomDefault, "ZoomDefault", Zoom(FixSettings.ZoomDefault));
             Write(rows.ZoomMin, "ZoomMin", Zoom(FixSettings.ZoomMin));
             Write(rows.ZoomMax, "ZoomMax", Zoom(FixSettings.ZoomMax));
+            if (Write(rows.MaxFps, "MaxFps", CurrentFps())) FrameRate.Reapply();     // applies at once
         }
         catch (Exception ex) { Log.Write("saving UnderrailFix options failed: " + ex); }
     }

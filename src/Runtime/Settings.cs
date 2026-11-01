@@ -67,6 +67,13 @@ BackgroundFit=0
 ; in Windows' display settings) doesn't stretch it or hide part of the resolution. 0 = Windows' default behaviour.
 DpiAware=1
 
+; 1 = no 60 FPS cap; 0 = the game's fixed 60 updates and frames per second.
+FrameRateFix=1
+
+; With FrameRateFix=1: 0 = no cap, or a frame rate, e.g. 120. With the game's VSync on, no cap means the monitor's
+; refresh rate (the smoothest); a cap that divides it evenly (e.g. 120 or 60 on 240 Hz) paces best.
+MaxFps=0
+
 ; 1 = write UnderrailFix.log in the game folder (what the fixes decided and any errors), e.g. for a bug report.
 Log=0
 ";
@@ -148,6 +155,8 @@ Log=0
     public static string UiInsetX => Get("UiInsetX");
     public static string UiInsetY => Get("UiInsetY");
     public static bool DpiAware => Flag("DpiAware");
+    public static bool FrameRateFix => Flag("FrameRateFix");
+    public static int MaxFps => Number("MaxFps") ?? 0;
     public static bool BackgroundFit => Get("BackgroundFit") == "1";     // off unless set
     public static bool LogEnabled { get { string v = Get("Log"); return v == "1" || string.Equals(v, "on", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase); } }     // off unless set
 
