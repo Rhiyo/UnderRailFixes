@@ -47,6 +47,8 @@ src/Installer/*.cs       UnderrailFix-Patcher.exe: backup + Cecil patches + unin
 src/Build/Retarget.cs    build step, see "XNA type identity"
 src/Build/GameVersion.cs, ListHooks.cs   release helpers
 src/Bundle/mono.config   dllmap for the bundled Linux patcher
+src/SteamHost/           UnderrailSteamHost.exe, the 32-bit Steam helper for experimental 64-bit
+lib/                     NVorbis.dll (fetched by build.sh, not committed)
 tools/gamescope-test.sh  run the game at a virtual resolution (8K, portrait...)
 ```
 
@@ -221,12 +223,28 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 
 ## Open ideas
 
-- 64-bit: the exe is x86 + 32BITREQUIRED; clearing that runs the managed code as 64-bit (Wine starts IL-only exes as
-  64-bit), but every native DLL is 32-bit: CSFML audio/window (old SFML 2.0/2.1, VC9 build, matching the sfmlnet
-  bindings), OpenAL Soft, libsndfile 1.0.24, steam_api.dll (02.01.77.37) and Styg's closed SteamHelper.dll (9
-  functions). 64-bit SFML/OpenAL/libsndfile could be shipped; SteamHelper would need a rewrite; steam_api64.dll may
-  only be redistributed by Steamworks partners, and without it there is no Steam integration or achievements.
-  The exe is LAA (4 GB), so the gain is small unless out-of-memory crashes appear. Parked.
+- **64-bit (Proton/Wine Mono only; experimental, `--experimental-64bit` patcher switch, not in releases yet):**
+  - Microsoft XNA is 32-bit only, so this can never work on Windows; under Proton, Wine starts an IL-only exe without
+    32BITREQUIRED as a 64-bit process and Wine Mono's 64-bit FNA handles graphics and sound effects.
+  - The switch clears 32BITREQUIRED on underrail.exe (Cecil) and, by flipping the CLI header flag bytes in place
+    (`ClearClr32Bit`; strong names aren't checked by Mono), on the game's `sfmlnet-audio-2.dll`/`sfmlnet-window-2.dll`
+    (backed up to `.backup`, restored by `--uninstall`).
+  - SFML is only used for streamed music (`bxt`: Music ctor/Loop/Volume/Pitch/Status/Play/Stop/Dispose, 10 calls).
+    The patch turns bxt's Music field into object and sends the calls to `FixMusic` (Music.cs): real SFML in a 32-bit
+    process, otherwise `OggMusic` = NVorbis 0.8.6 (Ms-PL, no deps; fetched by build.sh, hash-checked) decoding the
+    `.ogg` into XNA `DynamicSoundEffectInstance`. **Trap:** UnderRail's `Update` never calls the base `Game.Update`,
+    so FNA's `FrameworkDispatcher.Update` never runs: no `BufferNeeded`, and `PendingBufferCount` never drops (FNA
+    only collects finished buffers in the instance's internal `Update()`). A background thread calls that internal
+    `Update()` by reflection and keeps ~3 x 0.1 s buffers queued. Sound effects are unaffected (fire-and-forget).
+  - Steam: the game's 32-bit `SteamHelper.dll`/`steam_api.dll` can't load in 64-bit and `steam_api64.dll` may only be
+    redistributed by Steamworks partners, so `SteamBridge` sends the 9 `SteamHelper_*` calls (11 call sites, incl. 2
+    in `tb.Initialize`) to `UnderrailSteamHost.exe`, a 32-bit helper process loading the game's own SteamHelper.dll,
+    over stdin/stdout. `IsRunningOnWine`/`IsOnSteamDeck` aren't exported by the game's SteamHelper.dll
+    (EntryPointNotFound, which the stock game treats as false too); they're cached. No helper is restarted after
+    `ShutdownSteam`.
+  - Tested in a test copy (`~/underrail-x64` style: game files copied, `data` symlinked): 64-bit process, InitSteam
+    through the helper, main menu music audible, clean exit. Not yet: area music changes, achievements, long sessions.
+  - Still to do before releasing it: an ini/`Use64Bit` switch or patcher option for players, README, notices.
 - Sharper scaled text: re-render the bitmap fonts from their original TTFs at the scaled size; UI art would need
   upscaling (it's painted, not vector).
 - Naming: rename files/assembly to UnderRailFixes. The patcher detects a patched exe by its reference to the

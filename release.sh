@@ -68,6 +68,11 @@ cp LICENSE "$PKG/LICENSE.txt"
     echo "https://github.com/mono/mono"
     echo
     cat src/Release/mono.txt
+    echo
+    echo "=== NVorbis 0.8.6 (NVorbis.dll) ==="
+    echo "https://github.com/NVorbis/NVorbis"
+    echo
+    cat src/Release/nvorbis.txt
 } > "$PKG/THIRD-PARTY-NOTICES.txt"
 mkdir -p dist/release
 ZIP="dist/release/$NAME.zip"

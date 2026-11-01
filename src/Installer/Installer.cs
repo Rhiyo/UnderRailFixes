@@ -17,6 +17,7 @@
 //   insets: ci3 sizing / shaking the world view, daj.iz (in-game surface mouse bounds), a7m.b floor position, d0p full-screen dim, czo.a menu backgrounds, bg1.iv picture rectangle -> UiScaleFix.FullScreen / WorldLocation(Get) / InScreen / FloorOrigin / DimRect
 //   b5r zoom label, mv SHIFT+wheel and ci3 zoom-button steps -> UnderrailDisplayModes.ShownZoom / ZoomStep
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Mono.Cecil;
@@ -29,6 +30,7 @@ static class Patcher
     static int Main(string[] args)
     {
         bool uninstall = args.Any(a => a == "--uninstall" || a == "-u");
+        x64 = args.Any(a => a == "--experimental-64bit");
         string dir = args.FirstOrDefault(a => !a.StartsWith("-")) ?? FindGame();
         int code;
         try
@@ -68,6 +70,13 @@ static class Patcher
             return m.AssemblyReferences.Any(r => r.Name == "UnderrailFix");
     }
 
+    // --experimental-64bit (not in releases yet): run as a 64-bit process under Proton/Wine Mono (FNA). SFML music and
+    // the Steam calls are redirected to managed replacements (Music.cs, SteamBridge.cs) and the 32-bit flags are
+    // cleared on underrail.exe and the game's sfmlnet-*.dll (those get .backup copies too).
+    static bool x64;
+    static readonly string[] SfmlNet = { "sfmlnet-audio-2.dll", "sfmlnet-window-2.dll" };
+    static readonly string[] Extras = { "NVorbis.dll", "UnderrailSteamHost.exe" };
+
     static int Install(string dir)
     {
         string exe = Path.Combine(dir, Exe), backup = Path.Combine(dir, Backup), runtime = Path.Combine(dir, Runtime);
@@ -95,6 +104,25 @@ static class Patcher
         }
 
         byte[] patched = Patch(source, runtime);
+        if (x64)
+        {
+            string here2 = AppDomain.CurrentDomain.BaseDirectory;
+            foreach (string extra in Extras)
+            {
+                string from = new[] { here2, Path.Combine(here2, ".."), dir }.Select(d => Path.Combine(d, extra)).FirstOrDefault(File.Exists);
+                if (from == null) throw new Exception(extra + " is missing (needed for --experimental-64bit).");
+                if (!string.Equals(Path.GetFullPath(from), Path.GetFullPath(Path.Combine(dir, extra)), StringComparison.OrdinalIgnoreCase)) File.Copy(from, Path.Combine(dir, extra), true);
+            }
+            foreach (string lib in SfmlNet)
+            {
+                string path = Path.Combine(dir, lib), libBackup = path + ".backup";
+                if (!File.Exists(libBackup)) File.Copy(path, libBackup);
+                byte[] b = File.ReadAllBytes(libBackup);
+                ClearClr32Bit(b);
+                File.WriteAllBytes(path, b);
+            }
+            Console.WriteLine("Experimental 64-bit: cleared the 32-bit flags; SFML music and Steam calls redirected.");
+        }
         string temp = exe + ".new";
         File.WriteAllBytes(temp, patched);
         File.Copy(temp, exe, true);
@@ -118,6 +146,11 @@ static class Patcher
             return 0;
         }
         if (!File.Exists(backup)) throw new Exception("No " + Backup + " to restore. Use Steam's \"Verify integrity of game files\" (or reinstall) instead.");
+        foreach (string lib in SfmlNet)
+        {
+            string libBackup = Path.Combine(dir, lib + ".backup");
+            if (File.Exists(libBackup)) { File.Copy(libBackup, Path.Combine(dir, lib), true); File.Delete(libBackup); }
+        }
         File.Copy(backup, exe, true);
         File.Delete(backup);
         Console.WriteLine("Restored the original " + Exe + ". You can now delete UnderrailFix.dll, UnderrailFix.ini and UnderrailFix.log.");
@@ -322,6 +355,8 @@ static class Patcher
         Expect("Mouse.GetState calls", mice, 7);
         Expect("world batch projections", transforms, 1);
 
+        if (x64) Patch64(module, hook);
+
         var ms = new MemoryStream();
         asm.Write(ms);
         byte[] image = ms.ToArray();
@@ -334,6 +369,63 @@ static class Patcher
     static void Expect(string what, int found, int expected)
     {
         if (found != expected) throw new Exception("this game version isn't supported (" + what + ": found " + found + ", expected " + expected + ")");
+    }
+
+    static void Patch64(ModuleDefinition module, Func<string, string, MethodReference> hook)
+    {
+        // SFML music: every use of an SFML type becomes an object handled by FixMusic.
+        var music = new Dictionary<string, string> {
+            { ".ctor", "Create" }, { "get_Status", "Status" }, { "set_Loop", "SetLoop" }, { "set_Volume", "SetVolume" },
+            { "set_Pitch", "SetPitch" }, { "Play", "Play" }, { "Stop", "Stop" }, { "Dispose", "Dispose" } };
+        Func<TypeReference, bool> sfml = t => t != null && t.Scope != null && t.Scope.Name.StartsWith("sfmlnet");
+        int calls = 0, steam = 0;
+        foreach (var type in module.GetTypes())
+        {
+            foreach (var f in type.Fields.Where(f => sfml(f.FieldType))) f.FieldType = module.TypeSystem.Object;
+            foreach (var m in type.Methods.Where(m => m.HasBody))
+            {
+                foreach (var v in m.Body.Variables.Where(v => sfml(v.VariableType))) v.VariableType = module.TypeSystem.Object;
+                foreach (var i in m.Body.Instructions)
+                {
+                    var r = i.Operand as MethodReference;
+                    if (r == null) continue;
+                    if (sfml(r.DeclaringType))
+                    {
+                        string target;
+                        if (!music.TryGetValue(r.Name, out target)) throw new Exception("this game version isn't supported (SFML " + r.DeclaringType.Name + "." + r.Name + ")");
+                        i.OpCode = OpCodes.Call; i.Operand = hook("FixMusic", target); calls++;
+                    }
+                    else if (r.Name.StartsWith("SteamHelper_") && r.DeclaringType.Name == "efl")
+                    {
+                        i.OpCode = OpCodes.Call; i.Operand = hook("SteamBridge", r.Name.Substring("SteamHelper_".Length)); steam++;
+                    }
+                }
+            }
+        }
+        Expect("SFML music calls", calls, 10);
+        if (steam == 0) throw new Exception("this game version isn't supported (no Steam calls found)");
+        module.Attributes &= ~(ModuleAttributes.Required32Bit | ModuleAttributes.Preferred32Bit);
+    }
+
+    // COMIMAGE_FLAGS_32BITREQUIRED / 32BITPREFERRED in a .NET PE's CLI header, cleared in place (no rewrite, so a
+    // strong-name signature stays byte-identical otherwise; Mono doesn't check it, .NET skips it for full trust).
+    static void ClearClr32Bit(byte[] pe)
+    {
+        int h = BitConverter.ToInt32(pe, 0x3C);
+        int dirs = h + 24 + (BitConverter.ToUInt16(pe, h + 24) == 0x10b ? 96 : 112);
+        int cliRva = BitConverter.ToInt32(pe, dirs + 14 * 8);
+        int sections = BitConverter.ToUInt16(pe, h + 6), table = h + 24 + BitConverter.ToUInt16(pe, h + 20);
+        for (int i = 0; i < sections; i++)
+        {
+            int s = table + i * 40, va = BitConverter.ToInt32(pe, s + 12), size = Math.Max(BitConverter.ToInt32(pe, s + 8), 1), raw = BitConverter.ToInt32(pe, s + 20);
+            if (cliRva >= va && cliRva < va + size)
+            {
+                int flags = cliRva - va + raw + 16;
+                Array.Copy(BitConverter.GetBytes(BitConverter.ToInt32(pe, flags) & ~0x20002), 0, pe, flags, 4);
+                return;
+            }
+        }
+        throw new Exception("no CLI header");
     }
 
     static int Coff(byte[] pe) { return BitConverter.ToInt32(pe, 0x3C) + 4 + 18; }

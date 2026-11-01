@@ -18,11 +18,30 @@ REF="$GAME/underrail.exe"
 FNA="$(ls -d "$HOME"/.local/share/Steam/compatibilitytools.d/*/files/share/wine/mono/wine-mono-*/lib/mono/gac/WineMono.FNA/*/WineMono.FNA.dll \
     /usr/share/steam/compatibilitytools.d/*/files/share/wine/mono/wine-mono-*/lib/mono/gac/WineMono.FNA/*/WineMono.FNA.dll 2>/dev/null | sort -V | tail -1)"
 [ -n "$FNA" ] || { echo "WineMono.FNA.dll not found (comes with any Proton install)" >&2; exit 1; }
-mcs -nologo -optimize+ -target:library -out:"$OUT/UnderrailFix.dll" -r:"$REF" -r:"$FNA" -r:System.Core.dll -r:System.Drawing.dll "$HERE"/src/Runtime/*.cs
+# NVorbis 0.8.6 (Ms-PL, no dependencies): the Ogg Vorbis decoder for 64-bit music (Music.cs). Fetched from NuGet
+# once and checked against a known hash, so the repo needn't hold a binary.
+NVORBIS="$HERE/lib/NVorbis.dll"
+NVORBIS_SHA=dd049b810f39240a5405ff9eda8525c6b74065f1a032a1fb8350762bd1be9c3b
+if [ ! -f "$NVORBIS" ]; then
+    mkdir -p "$HERE/lib" "$HERE/build/nvorbis"
+    curl -fsSL https://www.nuget.org/api/v2/package/NVorbis/0.8.6 -o "$HERE/build/nvorbis/pkg.zip"
+    unzip -qo "$HERE/build/nvorbis/pkg.zip" lib/net35/NVorbis.dll -d "$HERE/build/nvorbis"
+    cp "$HERE/build/nvorbis/lib/net35/NVorbis.dll" "$NVORBIS"
+fi
+echo "$NVORBIS_SHA  $NVORBIS" | sha256sum -c --quiet - || { echo "NVorbis.dll doesn't match the expected hash" >&2; rm -f "$NVORBIS"; exit 1; }
+# The game's SFML.Net bindings, for the 32-bit music path (the backup when the local copy was patched for 64-bit).
+SFML=""
+for lib in sfmlnet-audio-2 sfmlnet-window-2; do
+    f="$GAME/$lib.dll"; [ -f "$f.backup" ] && f="$f.backup"; SFML="$SFML -r:$f"
+done
+mcs -nologo -optimize+ -target:library -out:"$OUT/UnderrailFix.dll" -r:"$REF" -r:"$FNA" -r:"$NVORBIS" $SFML -r:System.Core.dll -r:System.Drawing.dll "$HERE"/src/Runtime/*.cs
 mcs -nologo -out:"$HERE/build/Retarget.exe" -r:"$CECIL" -r:System.Core.dll "$HERE/src/Build/Retarget.cs"
 MONO_PATH="$(dirname "$CECIL")" mono "$HERE/build/Retarget.exe" "$OUT/UnderrailFix.dll" "$REF"
 mcs -nologo -optimize+ -out:"$OUT/UnderrailFix-Patcher.exe" -r:"$CECIL" -r:System.Core.dll "$HERE"/src/Installer/*.cs
 cp "$CECIL" "$OUT/"
+# Experimental 64-bit: the 32-bit Steam helper process and the music decoder.
+mcs -nologo -optimize+ -platform:x86 -out:"$OUT/UnderrailSteamHost.exe" "$HERE/src/SteamHost/SteamHost.cs"
+cp "$NVORBIS" "$OUT/"
 
 # Linux: the patcher, Cecil and the Mono runtime bundled into one executable (no Mono install needed), plus
 # libmono-native.so (System.Native: file and console I/O), which mkbundle --simple can't load from inside the bundle.
