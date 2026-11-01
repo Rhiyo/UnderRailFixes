@@ -19,6 +19,7 @@ Fixes (README.md has the player-facing description):
 | Interface | `UiScaleFix`, `UiScale`, `UiInsetX`, `UiInsetY` | whole-UI scale (auto = whole multiples of the shorter side / 2160), insets that centre the UI while the world stays full-screen |
 | Menu backgrounds (Interface group) | `BackgroundFit` (only with `UiScaleFix`) | 0 = the game's crop; 1 = whole image, letterboxed (backgrounds ignore insets either way) |
 | DPI | `DpiAware` | Windows only: per-monitor DPI awareness before the window exists |
+| Window icon | `WindowIcon` | WM_SETICON with the exe's icon (resource 32512, 64 + 32 px): FNA's SDL window has none, and Wine's Wayland driver (unlike X11) doesn't fall back to the exe's icon |
 | Frame rate | `FrameRateFix` (**default off**: not tested thoroughly), `MaxFps` | no fixed 60 Hz timestep (0) or a fixed one at MaxFps |
 | Log | `Log` | 0 (default) = no log file; 1 = `UnderrailFix.log` |
 
@@ -193,6 +194,7 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 | Game | Hook | Purpose |
 |---|---|---|
 | Game subclass ctor (`enu`, first `newobj` in Main) | `FrameRate.Apply(object)` | IsFixedTimeStep / TargetElapsedTime |
+| same, after it | `WindowIcon.Apply(object)` | window icon (the window exists once Game's ctor ran) |
 | entry `Main` (`b7i.a`) | `FixStartup.Run(version)` | version check, DPI awareness. **Signature must never change.** |
 | `cnt` ctors / `GetObjectData` | `ResolutionStore.Default/Load/Save` | resolution via ini; config.dat stays vanilla-valid |
 | `efw.a()` / `efw.a(key)` | `UnderrailDisplayModes.List/Get` | monitor modes, nearest-size fallback |

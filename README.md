@@ -57,6 +57,7 @@ UiScale=auto      ; interface scale: auto = whole multiples (100% below 4320p, 2
 UiInsetX=0        ; space kept clear at the left and right edges (total, split evenly): 0.1 or 10% = 5% each side, 256 or 256px = 128 px each side
 UiInsetY=0        ; same for the top and bottom
 DpiAware=1        ; Windows only: stop Windows display scaling from stretching the game
+WindowIcon=1      ; give the game window the game's icon (under Proton the task bar otherwise shows a generic one)
 BackgroundFit=0   ; with UiScaleFix=1, menu backgrounds: 0 = fill the screen, cropping the art (as the game does); 1 = show the whole image, never stretched
 FrameRateFix=0    ; 1 = no 60 FPS cap (off by default: not tested thoroughly yet); 0 = the game's fixed 60
 MaxFps=0          ; with FrameRateFix=1: 0 = no cap (with VSync: your refresh rate), or a cap such as 120
@@ -125,6 +126,10 @@ The game runs at a fixed 60 updates and frames per second (XNA's default), whate
 ### Windows display scaling
 
 XNA games don't tell Windows they can handle high-DPI screens, so with display scaling on (e.g. 150% in Windows' display settings) Windows may stretch the game or report a smaller resolution. `DpiAware=1` (the default) fixes that. It has no effect on Linux/Proton, which doesn't need it.
+
+### Window icon
+
+Under Proton the game window has no icon of its own, so the task bar shows a generic one (always with Wine's Wayland driver, e.g. `PROTON_ENABLE_WAYLAND=1`). `WindowIcon=1` (the default) gives the window the game's own icon. On Windows the window already has it, so nothing changes there.
 
 ## Experimental 64-bit
 

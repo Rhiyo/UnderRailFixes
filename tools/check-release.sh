@@ -73,7 +73,8 @@ UnderrailDropdownScroll.Closed
 UnderrailDropdownScroll.Opened
 UnderrailOptions.AddTab
 UnderrailOptions.Applied
-UnderrailOptions.Save"
+UnderrailOptions.Save
+WindowIcon.Apply"
 
 echo "== Linux patcher (Mono hidden)"
 L="$WORK/linux"; game_copy "$L"

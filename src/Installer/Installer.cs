@@ -11,7 +11,7 @@
 //   aw9 (dropdown) open/close -> UnderrailDropdownScroll.Opened/Closed (fits the list, adds a scrollbar)
 //   dka.b zoom limits ud(1f) / uf(2f), uf(3f) -> UnderrailDisplayModes.MinZoom / MaxZoom
 //   t1 (Options): end of t1.h -> UnderrailOptions.AddTab, end of t1.d (Accept) -> Save; end of d6f.a(ls) -> Applied
-//   the Game subclass's constructor (enu, created first in Main) -> FrameRate.Apply
+//   the Game subclass's constructor (enu, created first in Main) -> FrameRate.Apply, WindowIcon.Apply
 //   Main -> FixStartup.Run(version) (DLL version check, DPI awareness on Windows)
 //   UI scale: tb.k0/k4 screen size, SpriteBatch.Begin, the world batch's MatrixTransform, ScissorRectangle,
 //   Mouse.GetState, bso.abb cursor warp and the loading screen's size reads -> UiScaleFix (UiScale.cs)
@@ -244,6 +244,7 @@ static class Patcher
         // The game object's constructor (enu, the Game subclass): timing, before the loop starts.
         var gameType = module.EntryPoint.Body.Instructions.Where(i => i.OpCode == OpCodes.Newobj).Select(i => ((MethodReference)i.Operand).DeclaringType.Resolve()).First(t => t != null);
         AppendCall(gameType, ".ctor", hook("FrameRate", "Apply"));
+        AppendCall(gameType, ".ctor", hook("WindowIcon", "Apply"));     // the window's icon (WindowIcon.cs)
 
         // FixStartup.Run(version) runs before anything else in Main: version check against the DLL, DPI awareness.
         var main = module.EntryPoint;
