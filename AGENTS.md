@@ -72,6 +72,11 @@ scratch, runs `tools/check-release.sh`, packages `UnderRailFixes-X.Y.Z.zip` (dis
 THIRD-PARTY-NOTICES.txt from src/Release/), writes the notes (description + game version read from the exe by
 src/Build/GameVersion.cs + Steam build + install steps + SHA-256), tags `vX.Y.Z`, pushes and runs `gh release create`.
 
+Release lines: `main` holds everything, including unreleased work (experimental 64-bit). A fix for the current
+release line goes on `main` first, then is cherry-picked onto `release/X.Y` (branched from the last tag) and released
+from there, so unreleased work stays out: v1.0.2 was released from `release/1.0` (v1.0.1 + the insets clip fix).
+`release.sh` accepts `main` and `release/*`.
+
 `tools/check-release.sh` (also usable after any `./build.sh`) works on a temporary copy of the game folder: the Linux
 patcher with Mono hidden (install, re-run gives the same exe, simulated game update, uninstall restores the original
 byte for byte), the exact set of hooks in the patched exe (src/Build/ListHooks.cs; update its EXPECTED list when hooks
