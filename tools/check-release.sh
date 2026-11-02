@@ -149,4 +149,10 @@ Y="$WORK/windows64"; game_copy "$Y" "$DIST64"
 [ "$(md5 "$Y/underrail.exe")" = "$STOCK" ] || fail "64-bit Windows patcher uninstall didn't restore the original"
 [ "$(sfml_sums "$Y")" = "$SFML_STOCK" ] || fail "64-bit Windows patcher uninstall didn't restore the sfmlnet DLLs"
 echo "   ok: same patched exe as Linux, uninstall restores the originals"
+echo "== Linux patchers: baseline x86-64 (no AVX/AVX2/AVX-512, which not every CPU has)"
+for f in "$DIST"/linux/*.bin "$DIST"/linux/*.so "$DIST64"/linux/*.bin "$DIST64"/linux/*.so; do
+    n=$(objdump -d --no-show-raw-insn "$f" | grep -c -E '%[yz]mm[0-9]' || true)
+    [ "$n" = 0 ] || fail "$(basename "$f") uses AVX/AVX-512 instructions ($n): it was built from a CPU-specific Mono"
+done
+echo "   ok"
 echo "All checks passed."

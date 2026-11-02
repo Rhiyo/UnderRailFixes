@@ -53,6 +53,25 @@ cp "$HERE/lib/fna/FNA.dll" "$OUT64/"
 cp "$HERE"/lib/fna/x64/*.dll "$OUT64/x64/"
 MONO_PATH="$(dirname "$CECIL")" mono "$HERE/build/Retarget.exe" --fna "$OUT/UnderrailFix.dll" "$OUT64/FNA.dll" "$OUT64/UnderrailFix64.dll"
 
+# The Linux patcher bundles a Mono runtime: Arch's official mono package (baseline x86-64), never the build machine's,
+# which may be built for newer CPUs (CachyOS's x86-64-v4 mono has AVX-512 and crashed on Zen 3). Fetched once into
+# lib/mono-generic and checked against a known hash (and Arch's signature where pacman's keyring is there).
+MONO_PKG=mono-6.12.0.206-1-x86_64.pkg.tar.zst
+MONO_PKG_SHA=5c30dcc286b1f65073cf267a4befa5ef4ae282351c4337beada740a15ae1e528
+MONO_GENERIC="$HERE/lib/mono-generic"
+if [ ! -f "$MONO_GENERIC/mono-sgen" ] || [ ! -f "$MONO_GENERIC/libmono-native.so" ]; then
+    mkdir -p "$HERE/build/mono-pkg" "$MONO_GENERIC"
+    curl -fsSL -o "$HERE/build/mono-pkg/$MONO_PKG" "https://geo.mirror.pkgbuild.com/extra/os/x86_64/$MONO_PKG"
+    curl -fsSL -o "$HERE/build/mono-pkg/$MONO_PKG.sig" "https://geo.mirror.pkgbuild.com/extra/os/x86_64/$MONO_PKG.sig"
+    echo "$MONO_PKG_SHA  $HERE/build/mono-pkg/$MONO_PKG" | sha256sum -c --quiet - || { echo "$MONO_PKG doesn't match the expected hash" >&2; exit 1; }
+    if [ -f /etc/pacman.d/gnupg/pubring.kbx ]; then
+        gpgv --keyring /etc/pacman.d/gnupg/pubring.kbx "$HERE/build/mono-pkg/$MONO_PKG.sig" "$HERE/build/mono-pkg/$MONO_PKG" 2>/dev/null || { echo "$MONO_PKG: bad signature" >&2; exit 1; }
+    fi
+    tar --zstd -xf "$HERE/build/mono-pkg/$MONO_PKG" -C "$HERE/build/mono-pkg" usr/bin/mono-sgen usr/lib/libmono-native.so.0.0.0
+    cp "$HERE/build/mono-pkg/usr/bin/mono-sgen" "$MONO_GENERIC/mono-sgen"
+    cp "$HERE/build/mono-pkg/usr/lib/libmono-native.so.0.0.0" "$MONO_GENERIC/libmono-native.so"
+fi
+
 # The patchers: Windows (.NET Framework 4) and Linux. The Linux one is the patcher, Cecil and the Mono runtime bundled
 # into one executable (no Mono install needed), plus libmono-native.so (System.Native: file and console I/O), which
 # mkbundle --simple can't load from inside the bundle. The launch script puts its own folder on the library path;
@@ -61,9 +80,9 @@ patchers() {     # <dist folder> <Windows exe name> <Linux name> [mcs flags]
     local dir="$1" exe="$2" name="$3"; shift 3
     mcs -nologo -optimize+ "$@" -out:"$dir/$exe" -r:"$CECIL" -r:System.Core.dll "$HERE"/src/Installer/*.cs
     mkdir -p "$dir/linux"
-    mkbundle --simple --deps --machine-config /etc/mono/4.5/machine.config --config "$HERE/src/Bundle/mono.config" \
-        -L "$(dirname "$CECIL")" -o "$dir/linux/$name.bin" "$dir/$exe" "$dir/Mono.Cecil.dll" >/dev/null
-    cp -L /usr/lib/libmono-native.so "$dir/linux/libmono-native.so"
+    mkbundle --simple --runtime "$MONO_GENERIC/mono-sgen" --i18n none --deps --machine-config /etc/mono/4.5/machine.config --config "$HERE/src/Bundle/mono.config" \
+        -L "$(dirname "$CECIL")" -L /usr/lib/mono/4.5 -L /usr/lib/mono/4.5/Facades -o "$dir/linux/$name.bin" "$dir/$exe" "$dir/Mono.Cecil.dll" >/dev/null
+    cp "$MONO_GENERIC/libmono-native.so" "$dir/linux/libmono-native.so"
     cat > "$dir/$name" <<SH
 #!/bin/sh
 # Linux patcher for UnderRailFixes. Usage: ./$name [game folder] [--uninstall]

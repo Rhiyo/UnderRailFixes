@@ -62,7 +62,7 @@ src/Build/Retarget.cs    build step, see "XNA type identity"
 src/Build/GameVersion.cs, ListHooks.cs   release helpers
 src/Bundle/mono.config   dllmap for the bundled Linux patcher
 src/SteamHost/           UnderrailSteamHost.exe, the 32-bit Steam helper for experimental 64-bit
-lib/                     NVorbis.dll (fetched by build.sh), fna/ (tools/fetch-fna.sh); not committed
+lib/                     NVorbis.dll and mono-generic/ (fetched by build.sh), fna/ (tools/fetch-fna.sh); not committed
 tools/fetch-fna.sh       FNA built from its release + the pinned official native libraries + their licences
 tools/gamescope-test.sh  run the game at a virtual resolution (8K, portrait...)
 ```
@@ -293,6 +293,10 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
   `euz.Location`, `bnr.a` with `Color?`) doesn't compile (CS0012); use reflection for those.
 - Cecil drops IMAGE_FILE_LARGE_ADDRESS_AWARE; the patcher copies the original COFF characteristics.
 - An exe-loading launcher must not touch game types before loading the patched copy (the stock exe would load).
+- **The Linux patcher must bundle a baseline x86-64 Mono runtime, not the build machine's**: this machine's mono is
+  CachyOS's x86-64-v4 build, and bundling it shipped AVX-512 in v1.0.0-1.0.6 (crashed on Zen 3 and most CPUs).
+  build.sh bundles `lib/mono-generic` (from Arch's official mono package: hash-pinned, signature checked;
+  `mkbundle --runtime ... --i18n none -L /usr/lib/mono/4.5`), and check-release.sh fails on any ymm/zmm instruction.
 - `mkbundle --simple` can't load embedded native libraries: `libmono-native.so` ships next to the binary, with a
   wrapper script setting `LD_LIBRARY_PATH` and `src/Bundle/mono.config` mapping `System.Native`.
 - Under zsh, `$VAR` with spaces doesn't word-split; use bash for test loops.
