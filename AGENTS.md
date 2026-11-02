@@ -397,7 +397,7 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 - Advanced shader tiles flicker black on FNA3D's SDLGPU (Vulkan) and OpenGL backends; `FNA3D_FORCE_DRIVER=D3D11`
   fixes it. Reported upstream: https://github.com/FNA-XNA/FNA3D/issues/274
 - On GE-Proton the game can hang on exit in `winepulse.so: pulse_stop` (GE's proton-ds5-haptic patches change
-  winepulse); official Proton and Proton-CachyOS exit fine. Suggested (untested) workaround on GE:
-  `WINEDLLOVERRIDES="winepulse.drv=d"` (Wine falls back to winealsa).
+  winepulse); official Proton and Proton-CachyOS exit fine. Workaround on GE (confirmed):
+  `WINEDLLOVERRIDES="winepulse.drv=d"` (Wine falls back to winealsa). Not needed with the 64-bit download.
 - The game's own logger (`aa5`) only calls `Trace.WriteLine`, which no listener writes anywhere in release builds,
   so there is no game log to add to; `UnderrailFix.log` is the only log.
