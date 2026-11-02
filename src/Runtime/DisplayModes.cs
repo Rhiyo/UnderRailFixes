@@ -348,7 +348,7 @@ public static class UnderrailDropdownScroll
     // Called at the end of aw9's "open" method.
     public static void Opened(aw9 box)
     {
-        if (!FixSettings.ResolutionFix) return;
+        if (!FixSettings.ResolutionFix && !InFixesTab(box)) return;     // the Fixes tab's own dropdowns always
         try
         {
             var rows = box.Controls.OfType<zt>().ToList();
@@ -454,6 +454,12 @@ public static class UnderrailDropdownScroll
             var header = Header.GetValue(box) as euz;
             if (header != null) Move(header, 0, 0);
         }
+    }
+
+    static bool InFixesTab(euz c)
+    {
+        for (; c != null; c = c.Parent) if (c is cvh && c.Text == UnderrailOptions.TabTitle) return true;
+        return false;
     }
 
     // aw9's header: the button showing the chosen value (its only dak field).

@@ -56,12 +56,12 @@ release.sh               the only way to make a release (see Releasing)
 src/Release/             licence texts shipped in the release zip
 tools/check-release.sh   automated patcher checks (release.sh runs them)
 src/Runtime/*.cs         UnderrailFix.dll: everything the patched game calls
-src/Installer/*.cs       UnderrailFix-Patcher.exe: backup + Cecil patches + uninstall (and, built with
-                         EXPERIMENTAL_64BIT, UnderrailFix-Patcher-64bit.exe)
+src/Installer/*.cs       UnderrailFix-Patcher.exe: backup + Cecil patches + uninstall; installs the 64-bit mode,
+                         or with --32bit the 32-bit mode
 src/Build/Retarget.cs    build step, see "XNA type identity"
 src/Build/GameVersion.cs, ListHooks.cs   release helpers
 src/Bundle/mono.config   dllmap for the bundled Linux patcher
-src/SteamHost/           UnderrailSteamHost.exe, the 32-bit Steam helper for experimental 64-bit
+src/SteamHost/           UnderrailSteamHost.exe, the 32-bit Steam helper for the 64-bit mode
 lib/                     NVorbis.dll and mono-generic/ (fetched by build.sh), fna/ (tools/fetch-fna.sh); not committed
 tools/fetch-fna.sh       FNA built from its release + the pinned official native libraries + their licences
 tools/gamescope-test.sh  run the game at a virtual resolution (8K, portrait...)
@@ -72,7 +72,7 @@ Never commit decompiled game code or game files (`.gitignore` blocks exe/dll/xnb
 **Every file the original game can write must always stay readable by the original, unpatched game**, whatever mode
 the mod runs in: saves, config.dat, and anything else the stock game itself writes. (The mod's own files, such as
 UnderrailFix.ini/.log, are not meant here.) Players uninstall,
-Steam restores the stock exe after updates, and the files are shared between Windows, Proton and the experimental
+Steam restores the stock exe after updates, and the files are shared between Windows, Proton and the
 64-bit mode (same Documents folder). The mod keeps its own state in its own files (UnderrailFix.ini); config.dat
 keeps vanilla values (ResolutionStore). Saves and config.dat are BinaryFormatter data whose type names include the
 assembly that wrote them; the game's binder (`dds` -> `e6e.av3` read / `e6e.av5` write) resolves them, and the stock
@@ -88,24 +88,25 @@ Needs: `mono` + `mcs` + `mkbundle` (Arch: `mono`), Mono.Cecil 0.11 in the GAC
 the Steam copy, or its `.backup`), and any Proton install (for `WineMono.FNA.dll`). Paths are at the top of build.sh.
 
 Output `dist/UnderrailFix/`: `UnderrailFix.dll`, `UnderrailFix-Patcher.exe` + `Mono.Cecil.dll` (Windows, .NET
-Framework 4), `underrailfix-patcher` + `linux/` (Linux: mkbundle'd Mono, needs glibc >= 2.38), README.md.
-`dist/UnderrailFix-64bit/`: the same with the `-64bit` patchers, plus `UnderrailFix64.dll` (made by
-`Retarget.cs --fna`), `FNA.dll`, `x64/` (FNA3D, FAudio, SDL3), `NVorbis.dll`, `UnderrailSteamHost.exe`.
+Framework 4), `underrailfix-patcher` + `linux/` (Linux: mkbundle'd Mono, needs glibc >= 2.29, no AVX), README.md.
+The same folder holds the 64-bit mode's files: `UnderrailFix64.dll` (made by `Retarget.cs --fna`), `FNA.dll`, `x64/`
+(FNA3D, FAudio, SDL3), `NVorbis.dll`, `UnderrailSteamHost.exe`, and `UnderrailFix-Patcher-32bit.bat` (Windows: the
+patcher with `--32bit`). The Linux patcher's launch script sets `TERM=dumb` (Mono 6.12 crashes on newer terminfo
+files, mono/mono#21862).
 
 ### Releasing
 
 Always through `./release.sh X.Y.Z "description"` (or `-F notes.md`), never by hand, so every release is made the
 same way. It refuses to run unless on `main`, clean, in sync with origin, with a new version and UnderRail closed.
 Then it stamps `FixVersion.Value` (src/Runtime/Version.cs; committed only after everything passed), builds from
-scratch, runs `tools/check-release.sh`, packages `UnderRailFixes-X.Y.Z.zip` and
-`UnderRailFixes-64bit-experimental-X.Y.Z.zip` (each dist folder + LICENSE.txt + THIRD-PARTY-NOTICES.txt from
-src/Release/ and lib/fna/licenses/), writes the notes (description + game version read from the exe by
+scratch, runs `tools/check-release.sh`, packages `UnderRailFixes-X.Y.Z.zip` (the dist folder + LICENSE.txt +
+THIRD-PARTY-NOTICES.txt from src/Release/ and lib/fna/licenses/), writes the notes (description + game version read from the exe by
 src/Build/GameVersion.cs + Steam build + install steps + SHA-256), tags `vX.Y.Z`, pushes and runs `gh release create`.
 
 Release lines: `main` holds everything. When `main` has work that shouldn't ship yet, a fix for the current release
 line goes on `main` first, then is cherry-picked onto `release/X.Y` (branched from the last tag) and released from
-there: v1.0.2 was released from `release/1.0` (v1.0.1 + the insets clip fix). Since v1.0.3 the experimental 64-bit
-mode ships as its own download, so releases are made from `main` again.
+there: v1.0.2 was released from `release/1.0` (v1.0.1 + the insets clip fix). From v1.0.3 to v1.0.7 the 64-bit mode
+was its own experimental download; since v1.0.8 there's one download, with the 64-bit mode as the patcher's default.
 `release.sh` accepts `main` and `release/*`.
 
 `tools/check-release.sh` (also usable after any `./build.sh`) works on a temporary copy of the game folder: the Linux
@@ -178,6 +179,44 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 
 ### World drawing (Show Covered, the keyhole)
 
+- **Windows / Microsoft XNA uses the Reach profile and enforces it** (the game sets `GraphicsProfile` 0 = Reach in
+  `tb`; FNA doesn't enforce it): textures and render targets
+  <= 2048 a side, wrap addressing only on power-of-two textures, no separate alpha blend (colour and alpha factors
+  must match). Anything drawn by us must keep to it; screen-sized targets only where `ShowCovered.Fits`. Save
+  screenshots above 2048 are drawn straight into a 1920x1080 target (`SaveScreenshot.Target`; UiScaleFix maps the
+  screen's centre into it while it is bound), so they never need a large one. XNA (D3D9) also refuses a render target that is
+  still bound as a texture: clear `Textures[0]` first.
+- Our drawing never leaves the game's state broken: batches go through `ShowCovered.BeginGame/EndGame/BeginOwn`
+  so `CloseOpen` can end them, render targets/viewport/scissor are restored in `finally`, the keyhole always puts the
+  screen back as the target (`Keyhole.Abort`), and any exception sets `ShowCovered.Broken` (off until restart, one log
+  line).
+- Cost: only scenery (not floors, not characters) counts as cover; every pass is limited to the creature's area;
+  settings are re-read only when `FixSettings.Changes` moves. Render targets: the fills/outlines' shared mask + work
+  (2 screen-sized, PreserveContents, only where `Fits`), the keyhole's front picture (screen-sized, or tiles) and its
+  circle-sized snapshot/behind/mask. The keyhole's front pass only runs on frames where someone was covered the frame
+  before, starting at the first such target.
+- **The keyhole** (Keyhole in ShowCovered.cs; the class comment has the details):
+  - Targets: characters the game would outline (`ShowCovered.HasOutline`; stats alone took explosive barrels) with the
+    Keyhole effect. Covered = standing scenery drawn after the target over its body, noted in `Draw` every frame
+    (keyed by entity `bym.b`: a creature's `bym` is new every frame) and used the next frame; other frames cost nothing.
+    Holes ease in/out over 0.2 s.
+  - Split: the world pass continues into a front picture from the first layer after a covered target, or earlier, from
+    the first standing piece in front of last frame's hole. "In front" = inside its circle and at least the target's
+    square on both map axes (`b0b.d` X and Y, each against `Math.Floor` of the target's): a walking character is drawn
+    after the wall piece on the square it's leaving. X + Y alone also took pieces diagonally beside it (a wall running
+    south-west to north-east faded when walking along its front). Only scenery drawn after the target opens a hole. One screen-sized target; on Microsoft XNA above 2048 tiles of at most 2048 (Reach;
+    `KeyholeTiles=1` forces tiles anywhere for testing; a second tile gets a layer via `avw` without `avv`).
+  - Floor after the split near last frame's holes goes onto the screen as the game draws it (`AlsoOnScreen`, no depth
+    test), with its tile's extras, and only erases in the front picture (`EraseInFront`, Cut blend): drawn normally into
+    both, see-through floor (transition red) counted twice. It is never redrawn later. At WorldDone, per hole: cover = standing pieces in the circle in front of the target; behind =
+    everything else in the circle since the split, redrawn in order with the tint it was drawn with; mask = cover
+    silhouettes (x4, so soft edges count fully) x hole shape x fade; front = front x (1 - mask) + behind x mask (Cut,
+    then Additive); then the front picture onto the screen.
+  - **Tried and dropped (Nov 2026), don't redo:** a hole-area-only front picture (seams, bands, notches, sliced walls,
+    dark tiles, holes switched off past 2048); cutting scenery behind the target by sprite rectangles; chaining
+    overlapping pieces to "fade as one" (bounding rectangles are coarse: walls far away faded); redrawing floor at the
+    end of the frame (dark/black tiles); blending behind onto the screen under the front (dark ring); hooking the
+    game's visibility checks (didn't matter). See "The keyhole walking-floor bug" below.
 - `a7m`'s world pass: `iu(cp9, ...)` starts the world batch (`mv.iu`: `drl` with the lighting shader, LocaleOmniShader
   or the night-vision/camera ones; plain bc2 batch without Advanced shaders), then tiles in isometric order with the
   entities on them (`vp`), each layer through `a7m.a(cp9, a2f, bool shaderPass, bkx)` -> `a2f.f3` -> `chf.avw`. So
@@ -201,7 +240,7 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
   creature's `bym` with `bym.a(a2f)`.
 - The world view's zoom: `dnn.y` (a field that shares its name). Unobscuration alpha: `cnk.aq1().b().i()`.
 - Render targets: `by8` caches save and restore the current target and restart the world batch with `iu` (the
-  keyhole switches targets the same way). **FNA clears a RenderTargetUsage.DiscardContents target whenever it is set
+  keyhole switches to its front picture the same way). **FNA clears a RenderTargetUsage.DiscardContents target whenever it is set
   again**: anything switched away from and back to must be PreserveContents.
 
 ### Options window (t1)
@@ -262,13 +301,15 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 | `czo.a(esj)` -> `bg1` (start / return) | `BackgroundSize` / `BackgroundPlace` | menu backgrounds ignore insets; `BackgroundFit=1` shows the whole image (letterboxed) |
 | `bg1.iv` first Rectangle (draw target) | `BackgroundDraw` | the picture moves, not the control: the main menu panel is a **child** of the background |
 | end of `t1.h` / `t1.d` / `d6f.a(ls)` | `UnderrailOptions.AddTab/Save/Applied` | Fixes tab, save, live apply + confirm |
-| `tb.Draw` `ldc.i4 2048` (x2), `stfld x` | `SaveScreenshot.Limit` / `Shrink` | save screenshot rendered full size, then the 1080p view (the stock code crops to the top-left 2048 px) |
+| `tb.Draw` `ldc.i4 2048` (x2), `new RenderTarget2D`, `stfld x` | `SaveScreenshot.Limit` / `Target` / `Taken` | save screenshot: the screen's centre drawn straight into a 1080p picture (the stock code crops to the top-left 2048 px) |
 | `eg0` creature outline: the `mv.w` read, the reverse-highlight `IsKeyDown`, the `bym.a(outline)` | `ShowCovered.Interactive` / `Reverse` / `Add` | outline layers built for every creature Tab would outline (and during transitions), marked as ours |
-| start of `a7m.a(cp9, a2f, bool, bkx)` | `ShowCovered.Drawn` | world layers in drawing order; the keyhole's split and snapshots |
-| `a7m`'s `SetRenderTarget(null)` after the world loop | `ShowCovered.WorldDone` | keyhole holes, then the front target back on screen |
+| start of `a7m.a(cp9, a2f, bool, bkx)` | `ShowCovered.Drawn` | world layers in drawing order; keyhole targets, the split |
+| `a7m.a`'s `a2f.f3(cp9, bkx)` call | `ShowCovered.DrawLayer` | after the split, into the keyhole's front picture (every tile it reaches), floor also onto the screen; covered marking |
+| `a7m.b(cp9, ak1)` call (each tile's extras after its floor: the overlay `ob.w7`, `cgr.tu` tile renderers; not layers) | `ShowCovered.TileExtras` | after the split, into the front tiles that floor reached, and onto the screen |
+| `a7m`'s `SetRenderTarget(null)` after the world loop | `ShowCovered.WorldDone` | keyhole holes, then the front picture onto the screen |
 | start / end of `a7m.b(cp9)` (shader pass) | `ShowCovered.BeforePass` / `AfterPass` | our outlines out of the game's pass; fills/outlines on the hidden part after it |
 
-64-bit patcher only (`Patch64`):
+64-bit mode only (`Patch64`):
 
 | Game | Hook | Purpose |
 |---|---|---|
@@ -280,6 +321,50 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 | start of `e6e.av3` / end of `e6e.av5` | `FnaMode.SaveTypeName` / `SavedName` | saves read any XNA/FNA name, write XNA names |
 | `be3` (game formatter) `Assembly.FullName` / `Type.FullName` | `FnaMode.WrittenAssembly` / `WrittenTypeName` | same for its fallback naming |
 | all type references | (Cecil) `ToFna` | XNA 4.0 assemblies -> FNA |
+
+## The keyhole walking-floor bug (Nov 2026): what happened, and how not to repeat it
+
+**Symptom (as the player described it, accurately, from the start):** walking along a wall with a keyhole open, one
+floor tile next to the character (first the one south-west of it, later the one it was walking onto) stayed dark or
+occluded while moving and only showed properly once the character stopped. Its neighbours were fine. When something in
+the code changed, the bad tile moved by exactly one tile.
+
+**The actual causes (a chain, each fix exposing the next):**
+1. A walking character is drawn on the tile it walks to, so later in the game's order than when standing. The wall
+   piece on the row it's leaving is then drawn *before* it. The keyhole only cut scenery drawn after the target and
+   that piece stayed solid. Fix: a piece drawn before the target counts as in front if its map depth (b0b.d X + Y)
+   is at least the target's row (`Math.Floor`), and the split starts early, at the first such piece next to last
+   frame's hole (`InFrontOfFeet`, `lastNear`).
+2. With the split starting before the target, floor drawn between the split and the target lives only in the front
+   picture. A cut piece drawn under it cut it away too, and "behind" (an end-of-frame redraw of floor) came out
+   dark. Fix: every floor layer (and its tile's extras, `TileExtras`) is also drawn onto the screen at the moment
+   the game draws it (`AlsoOnScreen`), and floor is never redrawn into behind. The hole then shows the game's own
+   floor from the screen.
+3. `AlsoOnScreen` was first gated on `Targets.Count > 0`. Floor drawn after an early split but before the target
+   failed that, so the tile went pure black. The sampled colour (1,1,2) was the screen's clear colour, which means
+   nothing was drawn there. Fix: no gate. (Screen draws also skip the depth test, `DepthStencilState.None`.)
+
+**Why it took most of a night, and the rules that follow:**
+- **I guessed instead of measuring.** Lighting, game visibility/fog of war, shaders, tile tints, blend formulas,
+  "the game draws it darker", "it's normal, v1.0.7 does it too". Each guess got a build, the player tested it, and
+  it was wrong. Four visibility hooks were added and removed again for nothing.
+- **I dismissed the player's description.** It said "only while moving, at the hole's edge, moves one tile when you
+  change things". That is draw order, not lighting. Several times I answered "it's the game's lighting/colour" and
+  asked to leave it. Don't call something "the game" without proving it with the fix's switch off, on the same
+  build.
+- **What actually found it:**
+  - a per-frame log of draw order: each layer's index vs the target's last layer vs the split index, plus map
+    depth and whether it was cut;
+  - pixel captures of the front picture, the screen before the composite, and the final screen, taken only on
+    walking frames;
+  - sampling the exact RGB of the bad pixels in the player's screenshot (pure clear colour = nothing drawn;
+    darker = drawn wrong).
+- **Rules:**
+  - If a glitch depends on moving vs standing, log draw order first.
+  - If something is black, sample the pixel before theorising.
+  - Compare with v1.0.7 to *locate* a bug, never to dismiss it.
+  - When the player says "it's not that", stop defending the theory.
+  - Change one thing per build and say what each build is testing.
 
 ## Traps (each of these cost time)
 
@@ -295,8 +380,11 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 - An exe-loading launcher must not touch game types before loading the patched copy (the stock exe would load).
 - **The Linux patcher must bundle a baseline x86-64 Mono runtime, not the build machine's**: this machine's mono is
   CachyOS's x86-64-v4 build, and bundling it shipped AVX-512 in v1.0.0-1.0.6 (crashed on Zen 3 and most CPUs).
-  build.sh bundles `lib/mono-generic` (from Arch's official mono package: hash-pinned, signature checked;
-  `mkbundle --runtime ... --i18n none -L /usr/lib/mono/4.5`), and check-release.sh fails on any ymm/zmm instruction.
+  build.sh bundles `lib/mono-generic`: `mono-sgen` + `libmono-native.so` from the Mono project's Ubuntu 20.04
+  packages (6.12.0.200, hash-pinned; baseline x86-64 and glibc 2.29, where Arch's packages need 2.38), with the
+  class libraries from the local Mono (`mkbundle --simple --runtime ... --i18n none -L /usr/lib/mono/4.5 -L .../Facades`).
+  check-release.sh fails on any ymm/zmm instruction. Shipped natives otherwise: FNA3D/FAudio have no AVX, SDL3 has
+  AVX2 paths behind its own CPU detection; all .NET code is JIT-compiled on the player's CPU.
 - `mkbundle --simple` can't load embedded native libraries: `libmono-native.so` ships next to the binary, with a
   wrapper script setting `LD_LIBRARY_PATH` and `src/Bundle/mono.config` mapping `System.Native`.
 - Under zsh, `$VAR` with spaces doesn't word-split; use bash for test loops.
@@ -321,8 +409,9 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
   wall counted as a keyhole target: 1,128 "targets" a frame).
 - **Floor tiles are drawn after characters** in the world order: anything that cuts "what's drawn after the character"
   must keep floors (`b0b.IsFloor`/`IsGround`) out of it, or holes show black.
-- **Don't redraw characters**: their `by8` composite rebuilds its cached render target on every draw; the keyhole copies
-  the front target instead (that was massive lag with two keyholes).
+- **Don't redraw characters**: their `by8` composite rebuilds its cached render target on every draw (an earlier keyhole
+  did, and lagged massively with two keyholes); the keyhole redraws only floors and silhouettes, and a second tile
+  gets a character from its cached sprite (`avw` without `avv`).
 - **The game's static helpers**: `GetMethod` with `BindingFlags.Instance | NonPublic` misses static ones (`t1.a(dak,
   wj)`); a null MethodInfo there silently dropped the rest of the Gameplay rows.
 - More field/method name clashes, read by reflection: `b0b.ac`/`ad` (scale), `a2f.a` (id), `dnn.y` (zoom),
@@ -342,18 +431,19 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 - Other resolutions: `tools/gamescope-test.sh 7680 4320` (8K), `3840 2160`, `2160 3840` (portrait). Compare
   screenshots: 4K and 8K should look identical.
 - Done: 5120x1440 native, 4K and 8K (UI 200%, right-drag fixed), insets (floor clicks, edge clicks, Escape dim),
-  options tab basics, keep/revert countdown, zoom steps (wheel and buttons equal), save screenshots (1080p view),
+  options tab basics, keep/revert countdown, zoom steps (wheel and buttons equal), save screenshots (1080p view; since the direct 1080p render: 64-bit at 5120x1440),
   window icon under Wayland, Occluded characters in the 64-bit build under Proton (all effects, keyholes for several
   characters, transitions, Tab), the Fixes tab's sliders/tick boxes/scrolling/upward dropdowns.
-- Not yet: Occluded characters in the 32-bit build (XNA on Windows: the keyhole's render targets and blend states
-  are plain Reach features, but untested), its performance with many keyholes on a slower GPU, the Frame rate cap dropdown in game, the latest background change in game (picture drawn full-screen/letterboxed while the main menu's
+- Not yet: Occluded characters and save screenshots in the 32-bit build on Windows (XNA, Reach: fills/outlines only
+  up to a 2048x2048 back buffer, `ShowCovered.Fits`; the keyhole's tiles tested only under FNA with `KeyholeTiles=1`), its performance with many keyholes on a slower GPU, the Frame rate cap dropdown in game, the latest background change in game (picture drawn full-screen/letterboxed while the main menu's
   panel stays inset), portrait, the Windows patcher and `DpiAware` on real Windows, the keep/revert countdown in all paths,
-  older glibc distros for the Linux patcher.
+  older glibc distros for the Linux patcher, the GOG version, the Expedition / Heavy Duty expansions.
 
 ## Open ideas
 
-- **64-bit (experimental, its own download since v1.0.3):** see the hooks above. How it works:
-  - Microsoft XNA is 32-bit only, so the 64-bit patcher points underrail.exe (Cecil `ToFna`) and a copy of the runtime
+- **64-bit mode (the patcher's default since v1.0.8; its own experimental download in v1.0.3-v1.0.7):** see the hooks
+  above. How it works:
+  - Microsoft XNA is 32-bit only, so the 64-bit mode points underrail.exe (Cecil `ToFna`) and a copy of the runtime
     (`UnderrailFix64.dll`, assembly `UnderrailFix64`, made at build time) at our `FNA.dll` (FNA 26.08, the version
     Wine Mono 11.3 ships, built by `tools/fetch-fna.sh`). The same files run on Windows (.NET Framework) and under
     Proton (Wine Mono; Wine Mono's own XNA remapping is then never used). `FnaMode.Startup` adds `x64\` to the DLL
@@ -361,7 +451,7 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
     `FNA3D_FORCE_DRIVER=D3D11` unless set (the SDL_GPU flicker, FNA3D#274).
   - It clears 32BITREQUIRED on underrail.exe (Cecil) and, by flipping the CLI header flag bytes in place
     (`ClearClr32Bit`; strong names aren't checked), on the game's `sfmlnet-audio-2.dll`/`sfmlnet-window-2.dll`
-    (backed up to `.backup`, restored by `--uninstall` and by the standard patcher).
+    (backed up to `.backup`, restored by `--uninstall` and by installing the 32-bit mode).
   - SFML is only used for streamed music (`bxt`: Music ctor/Loop/Volume/Pitch/Status/Play/Stop/Dispose, 10 calls).
     The patch turns bxt's Music field into object and sends the calls to `FixMusic` (Music.cs): real SFML in a 32-bit
     process, otherwise `OggMusic` = NVorbis 0.8.6 (Ms-PL, no deps; fetched by build.sh, hash-checked) decoding the
@@ -402,6 +492,6 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
   fixes it. Reported upstream: https://github.com/FNA-XNA/FNA3D/issues/274
 - On GE-Proton the game can hang on exit in `winepulse.so: pulse_stop` (GE's proton-ds5-haptic patches change
   winepulse); official Proton and Proton-CachyOS exit fine. Workaround on GE (confirmed):
-  `WINEDLLOVERRIDES="winepulse.drv=d"` (Wine falls back to winealsa). Not needed with the 64-bit download.
+  `WINEDLLOVERRIDES="winepulse.drv=d"` (Wine falls back to winealsa). Not needed with the 64-bit mode.
 - The game's own logger (`aa5`) only calls `Trace.WriteLine`, which no listener writes anywhere in release builds,
   so there is no game log to add to; `UnderrailFix.log` is the only log.

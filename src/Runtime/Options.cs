@@ -25,6 +25,7 @@ enum StyleOnly { A }
 public static class UnderrailOptions
 {
     const string TabName = "Fixes";
+    internal const string TabTitle = TabName;
     sealed class Rows
     {
         public oz CoveredTransparency, KeyholeTransparency, KeyholeSize, InsetX, InsetY, ZoomDefault, ZoomMin, ZoomMax;
@@ -231,6 +232,7 @@ public static class UnderrailOptions
         var slider = ((System.Collections.IDictionary)Sliders.GetValue(options))[key] as oz;
         AlignSlider(page, slider);
         // Dragging snaps to whole steps (a 25-400 range moved by single points is too fiddly).
+        if (slider != null) { SliderStart.Remove(slider); SliderStart.Add(slider, slider.l()); }
         if (slider != null) slider.f(new EventHandler<c1>((sender, e) =>
         {
             int v = slider.l(), snapped = Math.Max(min, Math.Min(max, min + (int)Math.Round((v - min) / (double)step) * step));
@@ -239,9 +241,14 @@ public static class UnderrailOptions
         return slider;
     }
 
+    // What each slider showed when the tab was built: only a moved slider is written (a value the slider can't show,
+    // e.g. a 75 % inset, stays as it is otherwise).
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<oz, object> SliderStart = new System.Runtime.CompilerServices.ConditionalWeakTable<oz, object>();
+    static bool Moved(oz slider) { object start; return slider != null && (!SliderStart.TryGetValue(slider, out start) || (int)start != slider.l()); }
+
     static bool WriteSlider(oz slider, string key, int current)
     {
-        if (slider == null || slider.l() == current) return false;
+        if (!Moved(slider)) return false;
         FixSettings.SetValue(key, slider.l().ToString());
         Log.Write("options: " + key + "=" + slider.l());
         return true;
@@ -279,7 +286,7 @@ public static class UnderrailOptions
     // Only when the slider was moved: a pixel inset in the ini stays as it is otherwise.
     static bool WriteInset(oz slider, int was, string key)
     {
-        if (slider == null || slider.l() == was) return false;
+        if (!Moved(slider)) return false;
         FixSettings.SetValue(key, slider.l() == 0 ? "0" : slider.l() + "%");
         Log.Write("options: " + key + "=" + slider.l() + "%");
         return true;
@@ -464,12 +471,31 @@ static class TabScroll
             States.Add(page, s);
             page.t(new EventHandler<b25>((sender, e) => Wheel(page, e)));
             bar.t(new EventHandler<b25>((sender, e) => Wheel(page, e)));
-            foreach (var i in items) i.Item1.t(new EventHandler<b25>((sender, e) => Wheel(page, e)));
+            foreach (var i in items) { i.Item1.t(new EventHandler<b25>((sender, e) => Wheel(page, e))); NoSliderWheel(i.Item1, page); }
             Show(s);
             UnderrailDropdownScroll.Add(page, bar);
             Log.Write($"options: Fixes tab scrolls ({content} px of rows, {room} px above Accept)");
         }
         catch (Exception ex) { UnderrailOptions.TabFailed("scrolling", ex); }
+    }
+
+    // Sliders (c5h) change their value on the wheel themselves (c5h.it, the first MouseScroll handler, added by euz's
+    // ctor), before the page's handler scrolls: scrolling the tab over a slider moved it. In the Fixes tab they lose
+    // that handler, so the wheel only scrolls the tab (sliders still drag and click).
+    static readonly FieldInfo WheelHandlers = typeof(euz).GetField("ab", BindingFlags.Instance | BindingFlags.NonPublic);
+    static void NoSliderWheel(euz control, cvh page)
+    {
+        if (control == null || WheelHandlers == null || WheelHandlers.FieldType != typeof(EventHandler<b25>)) return;
+        if (control is c5h)
+        {
+            var handlers = WheelHandlers.GetValue(control) as EventHandler<b25>;
+            if (handlers != null)
+                foreach (var d in handlers.GetInvocationList())
+                    if (d.Target == control && d.Method.Name == "it") handlers = (EventHandler<b25>)Delegate.Remove(handlers, d);
+            WheelHandlers.SetValue(control, handlers);
+            control.t(new EventHandler<b25>((sender, e) => Wheel(page, e)));     // the wheel over it scrolls the tab (it no longer passes it up)
+        }
+        foreach (var child in control.Controls.Cast<euz>()) NoSliderWheel(child, page);
     }
 
     // A dropdown that is open is taller than it was built.

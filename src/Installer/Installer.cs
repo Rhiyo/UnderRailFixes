@@ -1,7 +1,7 @@
 // UnderRailFixes patcher: backs up underrail.exe and patches it in place to call UnderrailFix.dll.
-//   UnderrailFix-Patcher [game folder]               install (or update an existing install)
+//   UnderrailFix-Patcher [game folder]               install the 64-bit mode (or update an existing install)
+//   UnderrailFix-Patcher [game folder] --32bit       install the 32-bit mode (the game's own Microsoft XNA; see Patch64)
 //   UnderrailFix-Patcher [game folder] --uninstall   restore the original exe
-// UnderrailFix-Patcher-64bit (EXPERIMENTAL_64BIT) does the same with the experimental 64-bit mode (see Patch64).
 // The game folder defaults to the folder the patcher is in, then the current folder.
 //
 // Patches (each fix is switched on/off at runtime by UnderrailFix.ini, so changing it never needs a re-patch):
@@ -17,7 +17,7 @@
 //   Mouse.GetState, bso.abb cursor warp and the loading screen's size reads -> UiScaleFix (UiScale.cs)
 //   insets: ci3 sizing / shaking the world view, daj.iz (in-game surface mouse bounds), a7m.b floor position, d0p full-screen dim, czo.a menu backgrounds, bg1.iv picture rectangle -> UiScaleFix.FullScreen / WorldLocation(Get) / InScreen / FloorOrigin / DimRect
 //   eg0 creature outline (reverse-highlight check, layer add), a7m layer draw / shader pass -> ShowCovered
-//   tb.Draw save screenshot: full size, then shrunk to fit 2048 -> SaveScreenshot.Limit / Shrink
+//   tb.Draw save screenshot: 1080p picture of the screen's centre -> SaveScreenshot.Limit / Target / Taken
 //   b5r zoom label, mv SHIFT+wheel and ci3 zoom-button steps -> UnderrailDisplayModes.ShownZoom / ZoomStep
 using System;
 using System.Collections.Generic;
@@ -33,6 +33,7 @@ static class Patcher
     static int Main(string[] args)
     {
         bool uninstall = args.Any(a => a == "--uninstall" || a == "-u");
+        x64 = !args.Any(a => a == "--32bit" || a == "--32");
         string dir = args.FirstOrDefault(a => !a.StartsWith("-")) ?? FindGame();
         int code;
         try
@@ -72,16 +73,12 @@ static class Patcher
             return m.AssemblyReferences.Any(r => r.Name == "UnderrailFix" || r.Name == "UnderrailFix64");
     }
 
-    // Experimental 64-bit patcher (built with EXPERIMENTAL_64BIT as UnderrailFix-Patcher-64bit, its own download): run as
+    // 64-bit mode (the default; --32bit installs the 32-bit mode instead): run as
     // a 64-bit process on our FNA.dll instead of XNA (Microsoft XNA is 32-bit only), on Windows and under Proton. underrail.exe and a copy of the runtime (UnderrailFix64.dll) are
     // pointed at FNA (FnaMode.cs; the copy is made by the build, src/Build/Retarget.cs --fna); SFML music and the Steam calls go to managed replacements (Music.cs, SteamBridge.cs);
     // the 32-bit flags are cleared on underrail.exe and the game's sfmlnet-*.dll (those get .backup copies too).
     // FNA's native libraries go to x64\ (a 32-bit FNA under Wine Mono would pick them up from the game folder itself).
-#if EXPERIMENTAL_64BIT
-    const bool x64 = true;
-#else
-    const bool x64 = false;
-#endif
+    static bool x64;
     static readonly string[] SfmlNet = { "sfmlnet-audio-2.dll", "sfmlnet-window-2.dll" };
     static readonly string[] Extras = { Runtime64, "NVorbis.dll", "UnderrailSteamHost.exe", "FNA.dll",
         Path.Combine("x64", "FNA3D.dll"), Path.Combine("x64", "FAudio.dll"), Path.Combine("x64", "SDL3.dll") };
@@ -119,7 +116,7 @@ static class Patcher
             foreach (string extra in Extras)
             {
                 string from = new[] { here, Path.Combine(here, ".."), dir }.Select(d => Path.Combine(d, extra)).FirstOrDefault(File.Exists);
-                if (from == null) throw new Exception(extra + " is missing (it comes with the 64-bit patcher; copy all of its files into the game folder).");
+                if (from == null) throw new Exception(extra + " is missing: copy all of UnderRailFixes' files into the game folder (or install the 32-bit mode with --32bit).");
                 string to = Path.Combine(dir, extra);
                 Directory.CreateDirectory(Path.GetDirectoryName(to));
                 if (!string.Equals(Path.GetFullPath(from), Path.GetFullPath(to), StringComparison.OrdinalIgnoreCase)) File.Copy(from, to, true);
@@ -133,12 +130,13 @@ static class Patcher
                 ClearClr32Bit(b);
                 File.WriteAllBytes(path, b);
             }
-            Console.WriteLine("Experimental 64-bit: FNA instead of XNA, 32-bit flags cleared, SFML music and Steam calls redirected.");
+            Console.WriteLine("64-bit mode: FNA instead of XNA, SFML music and Steam calls redirected. For the 32-bit mode, run the patcher with --32bit.");
         }
         else
         {
             patched = Patch(source, runtime);
             Remove64(dir);
+            Console.WriteLine("32-bit mode: the game's own Microsoft XNA (FNA under Proton).");
         }
         string temp = exe + ".new";
         File.WriteAllBytes(temp, patched);
@@ -281,13 +279,16 @@ static class Patcher
             loading++;
         }
         Expect("loading screen size reads", loading, 2);
-        // Save screenshots: rendered at full size and shrunk to fit 2048 (Screenshot.cs), instead of cropped.
+        // Save screenshots: the 1080p view drawn straight into a 1080p picture (Screenshot.cs), instead of cropped.
         var shotLimits = draw.Body.Instructions.Where(i => i.OpCode == OpCodes.Ldc_I4 && (int)i.Operand == 2048).ToList();
         foreach (var i in shotLimits) draw.Body.GetILProcessor().InsertAfter(i, Instruction.Create(OpCodes.Call, hook("SaveScreenshot", "Limit")));
         Expect("screenshot size limits", shotLimits.Count, 2);
+        var shotTargets = draw.Body.Instructions.Where(i => i.OpCode == OpCodes.Newobj && i.Operand is MethodReference r && r.DeclaringType.Name == "RenderTarget2D" && r.Parameters.Count == 8).ToList();
+        Expect("screenshot targets", shotTargets.Count, 1);
+        shotTargets[0].OpCode = OpCodes.Call; shotTargets[0].Operand = hook("SaveScreenshot", "Target");
         var shotField = tb.Fields.Single(f => f.Name == "x" && f.FieldType.Name == "Texture2D");
         var shotStores = draw.Body.Instructions.Where(i => i.OpCode == OpCodes.Stfld && i.Operand == shotField).ToList();
-        foreach (var i in shotStores) draw.Body.GetILProcessor().InsertBefore(i, Instruction.Create(OpCodes.Call, hook("SaveScreenshot", "Shrink")));
+        foreach (var i in shotStores) draw.Body.GetILProcessor().InsertBefore(i, Instruction.Create(OpCodes.Call, hook("SaveScreenshot", "Taken")));
         Expect("screenshot stores", shotStores.Count, 1);
 
         int begins = 0, scissors = 0, mice = 0, transforms = 0;
@@ -428,7 +429,22 @@ static class Patcher
             drawIl.InsertBefore(drawStart, Instruction.Create(OpCodes.Ldarg_2));
             drawIl.InsertBefore(drawStart, Instruction.Create(OpCodes.Ldarg_3));
             drawIl.InsertBefore(drawStart, Instruction.Create(OpCodes.Call, hook("ShowCovered", "Drawn")));
-            // The world pass ends its loop with GraphicsDevice.SetRenderTarget(null): the keyhole puts its front target back first.
+            // Its a2f.f3(cp9, bkx) call: through ShowCovered.DrawLayer (same arguments), so the keyhole can draw scenery itself.
+            var drawCalls = drawLayer.Body.Instructions.Where(i => i.OpCode == OpCodes.Callvirt && i.Operand is MethodReference r && r.Name == "f3"
+                && r.DeclaringType.Name == "a2f").ToList();
+            Expect("layer draw calls", drawCalls.Count, 1);
+            drawCalls[0].OpCode = OpCodes.Call; drawCalls[0].Operand = hook("ShowCovered", "DrawLayer");
+            // a7m.b(cp9, ak1): what a7m draws over each tile right after its floor, not as layers (the tile overlay's
+            // ob.w7 and the cgr tile renderers, e.g. the red of transition tiles): through ShowCovered.TileExtras
+            // (same stack: the view, the context, the tile), so it goes wherever the keyhole sent that floor.
+            var tileStep = view.Methods.Single(m => m.Name == "b" && !m.IsStatic && m.Parameters.Count == 2 && m.Parameters[0].ParameterType.Name == "cp9"
+                && m.Parameters[1].ParameterType.Name == "ak1" && m.ReturnType.MetadataType == MetadataType.Void);
+            var tileCalls = view.Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions.Where(i => (i.OpCode == OpCodes.Call || i.OpCode == OpCodes.Callvirt)
+                && i.Operand is MethodReference r && r.DeclaringType.FullName == "a7m" && r.Name == tileStep.Name && r.Parameters.Count == 2
+                && r.Parameters[0].ParameterType.Name == "cp9" && r.Parameters[1].ParameterType.Name == "ak1")).ToList();
+            Expect("tile extras calls", tileCalls.Count, 1);
+            tileCalls[0].OpCode = OpCodes.Call; tileCalls[0].Operand = hook("ShowCovered", "TileExtras");
+            // The world pass ends its loop with GraphicsDevice.SetRenderTarget(null): the keyhole's end of frame.
             var resets = view.Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions.Where(i => i.Operand is MethodReference r && r.Name == "SetRenderTarget"
                 && i.Previous.OpCode == OpCodes.Ldnull && i.Previous.Previous.OpCode == OpCodes.Ldfld && ((FieldReference)i.Previous.Previous.Operand).Name == "c"
                 && ((FieldReference)i.Previous.Previous.Operand).DeclaringType.Name == "cp9").Select(i => new { m, i })).ToList();

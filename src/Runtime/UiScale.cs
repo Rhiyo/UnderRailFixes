@@ -10,7 +10,8 @@
 // VirtualWidth/VirtualHeight; ci3 sizing/moving the world view -> FullScreen/WorldLocation; daj.iz -> InScreen; a7m.b's at() -> FloorOrigin; d0p's fill -> DimRect; czo.a (menu backgrounds) -> BackgroundSize/BackgroundPlace; bg1.iv's draw rectangle -> BackgroundDraw.
 // Drawing is only mapped while the viewport covers the whole back buffer: off-screen render targets (light
 // effects and the like) keep the game's own pixel sizes, while screenshots, which use a screen-sized viewport,
-// are mapped like the screen.
+// are mapped like the screen. Save screenshots of screens over 2048 pixels are drawn straight into a 1080p
+// picture (SaveScreenshot): while that is the target, the mapping also takes the screen's centre into it.
 //
 // This file uses XNA types. The build compiles it against FNA and then points every XNA type reference at the
 // XNA 4.0 assembly the game itself uses for that type, so it runs on FNA (Wine Mono) and on Microsoft XNA alike.
@@ -37,17 +38,33 @@ public static class UiScaleFix
 
     static bool Identity(ScaleRules.Area a) { return a.K == 1f && a.Left == 0 && a.Top == 0; }
 
-    // The mapping to draw with right now: only while drawing to the whole screen.
-    static bool Drawing(GraphicsDevice g, out ScaleRules.Area a)
+    // UI coordinates -> pixels of the current target: pixel = ui * K + (X, Y).
+    struct Map { public float K, X, Y; }
+
+    // The mapping to draw with right now: only while drawing to the whole screen, or into the save screenshot
+    // (the screen's mapping, then the screen's centre into the smaller picture: SaveScreenshot).
+    static bool Drawing(GraphicsDevice g, out Map m)
     {
         device = g;
-        a = Area;
+        var a = Area;
+        m = new Map { K = a.K, X = a.Left, Y = a.Top };
+        Vector2 from; float k;
+        if (SaveScreenshot.Capturing(g, out from, out k))
+        {
+            m = new Map { K = m.K * k, X = (m.X - from.X) * k, Y = (m.Y - from.Y) * k };
+            return true;
+        }
+        if (Keyhole.Into(out from))
+        {
+            m = new Map { K = m.K, X = m.X - from.X, Y = m.Y - from.Y };
+            return true;
+        }
         if (Identity(a)) return false;
         Viewport v = g.Viewport;
         return v.Width == g.PresentationParameters.BackBufferWidth && v.Height == g.PresentationParameters.BackBufferHeight;
     }
 
-    static Matrix ToPixels(ScaleRules.Area a) { return Matrix.CreateScale(a.K, a.K, 1f) * Matrix.CreateTranslation(a.Left, a.Top, 0f); }
+    static Matrix ToPixels(Map m) { return Matrix.CreateScale(m.K, m.K, 1f) * Matrix.CreateTranslation(m.X, m.Y, 0f); }
 
     // bef.k0 (back buffer size) and bef.k4 (requested size): what the UI lays itself out for.
     public static esj Virtual(esj screen)
@@ -74,7 +91,7 @@ public static class UiScaleFix
 
     public static void Begin6(SpriteBatch batch, SpriteSortMode sort, BlendState blend, SamplerState sampler, DepthStencilState depth, RasterizerState rasterizer, Effect effect)
     {
-        ScaleRules.Area a;
+        Map a;
         if (!Drawing(batch.GraphicsDevice, out a)) batch.Begin(sort, blend, sampler, depth, rasterizer, effect);
         else
         {
@@ -89,7 +106,7 @@ public static class UiScaleFix
     // The world batch's pixel-to-clip projection, applied to UI coordinates.
     public static Matrix Transform(Matrix projection)
     {
-        ScaleRules.Area a;
+        Map a;
         if (device == null || !Drawing(device, out a)) return projection;
         Once(ref loggedWorld, "interface: world drawing mapped");
         return ToPixels(a) * projection;
@@ -101,7 +118,7 @@ public static class UiScaleFix
     // with insets it would start at -offset and look clipped, and a clip saved during the transition screenshot
     // (2048x576) would then be put back on the screen and kept there. So it is passed as (0, 0, screen size in UI
     // units) both ways.
-    static Rectangle Unclipped(ScaleRules.Area a) { return new Rectangle(0, 0, (int)Math.Ceiling(screenW / a.K), (int)Math.Ceiling(screenH / a.K)); }
+    static Rectangle Unclipped() { var a = Area; return new Rectangle(0, 0, (int)Math.Ceiling(screenW / a.K), (int)Math.Ceiling(screenH / a.K)); }
 
     static Rectangle FullTarget(GraphicsDevice g)
     {
@@ -112,14 +129,16 @@ public static class UiScaleFix
 
     public static void SetScissor(GraphicsDevice g, Rectangle r)
     {
-        ScaleRules.Area a;
-        if (Drawing(g, out a))
+        Map m;
+        if (Drawing(g, out m))
         {
-            if (r == Unclipped(a)) r = FullTarget(g);
+            var full = FullTarget(g);
+            if (r == Unclipped()) r = full;
             else
             {
-                int x = (int)Math.Floor(r.X * a.K) + a.Left, y = (int)Math.Floor(r.Y * a.K) + a.Top;
-                r = new Rectangle(x, y, (int)Math.Ceiling(r.Right * a.K) + a.Left - x, (int)Math.Ceiling(r.Bottom * a.K) + a.Top - y);
+                int x = (int)Math.Floor(r.X * m.K + m.X), y = (int)Math.Floor(r.Y * m.K + m.Y);
+                r = new Rectangle(x, y, (int)Math.Ceiling(r.Right * m.K + m.X) - x, (int)Math.Ceiling(r.Bottom * m.K + m.Y) - y);
+                r = Rectangle.Intersect(r, full);     // the screenshot's picture is smaller than the screen
             }
         }
         g.ScissorRectangle = r;
@@ -128,11 +147,11 @@ public static class UiScaleFix
     public static Rectangle GetScissor(GraphicsDevice g)
     {
         Rectangle r = g.ScissorRectangle;
-        ScaleRules.Area a;
-        if (!Drawing(g, out a)) return r;
-        if (r == FullTarget(g)) return Unclipped(a);
-        int x = (int)Math.Floor((r.X - a.Left) / a.K), y = (int)Math.Floor((r.Y - a.Top) / a.K);
-        return new Rectangle(x, y, (int)Math.Ceiling((r.Right - a.Left) / a.K) - x, (int)Math.Ceiling((r.Bottom - a.Top) / a.K) - y);
+        Map m;
+        if (!Drawing(g, out m)) return r;
+        if (r == FullTarget(g)) return Unclipped();
+        int x = (int)Math.Floor((r.X - m.X) / m.K), y = (int)Math.Floor((r.Y - m.Y) / m.K);
+        return new Rectangle(x, y, (int)Math.Ceiling((r.Right - m.X) / m.K) - x, (int)Math.Ceiling((r.Bottom - m.Y) / m.K) - y);
     }
 
     internal static int ScreenWidth { get { var unused = Area; return screenW; } }

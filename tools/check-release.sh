@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Automated checks on a built dist/UnderrailFix and dist/UnderrailFix-64bit, run by release.sh (and fine to run by
+# Automated checks on a built dist/UnderrailFix (one patcher: 64-bit mode by default, --32bit), run by release.sh (and fine to run by
 # hand after ./build.sh).
 # Works on a temporary copy of the game folder; the real install is only read.
-#   - Linux patcher, with Mono hidden (it must be self-contained): install, re-run, simulated game update, uninstall
+#   - Linux patcher (--32bit), with Mono hidden (it must be self-contained): install, re-run, simulated game update, uninstall
 #   - the original exe is restored byte-identical and the backup is removed
 #   - the patched exe calls exactly the expected set of hooks
 #   - the Windows patcher (run with mono) installs and uninstalls too
-#   - the 64-bit patchers likewise, plus: no XNA reference left, the game's sfmlnet DLLs backed up and restored byte for
-#     byte, and the standard patcher switching a 64-bit install back to the standard one
+#   - the 64-bit mode (the default) likewise, plus: no XNA reference left, the game's sfmlnet DLLs backed up and restored
+#     byte for byte, and switching between the 64-bit and 32-bit modes
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 GAME="${GAME:-$HOME/.local/share/Steam/steamapps/common/Underrail}"
 DIST="$HERE/dist/UnderrailFix"
-DIST64="$HERE/dist/UnderrailFix-64bit"
+DIST64="$DIST"     # one download: the 64-bit mode by default, the 32-bit mode with --32bit
 CECIL_DIR=/usr/lib/mono/gac/Mono.Cecil/0.11.1.0__0738eb9f132ed756
-[ -d "$DIST" ] && [ -d "$DIST64" ] || { echo "no $DIST or $DIST64: run ./build.sh first" >&2; exit 1; }
+[ -d "$DIST" ] || { echo "no $DIST: run ./build.sh first" >&2; exit 1; }
 
 # The stock exe: the backup if the local copy is patched.
 ORIG="$GAME/underrail.exe"; [ -f "$GAME/underrail.exe.backup" ] && ORIG="$GAME/underrail.exe.backup"
@@ -42,13 +42,16 @@ ResolutionStore.Default
 ResolutionStore.Load
 ResolutionStore.Save
 SaveScreenshot.Limit
-SaveScreenshot.Shrink
+SaveScreenshot.Taken
+SaveScreenshot.Target
 ShowCovered.Add
 ShowCovered.AfterPass
 ShowCovered.BeforePass
+ShowCovered.DrawLayer
 ShowCovered.Drawn
 ShowCovered.Interactive
 ShowCovered.Reverse
+ShowCovered.TileExtras
 ShowCovered.WorldDone
 UiScaleFix.BackgroundDraw
 UiScaleFix.BackgroundPlace
@@ -86,26 +89,26 @@ WindowIcon.Apply"
 echo "== Linux patcher (Mono hidden)"
 L="$WORK/linux"; game_copy "$L"
 nomono() { bwrap --ro-bind / / --bind "$WORK" "$WORK" --tmpfs /usr/lib/mono --tmpfs /etc/mono --dev /dev --proc /proc "$@" </dev/null; }
-nomono "$L/underrailfix-patcher" "$L" >/dev/null || fail "install"
+nomono "$L/underrailfix-patcher" "$L" --32bit >/dev/null || fail "install"
 [ "$(md5 "$L/underrail.exe.backup")" = "$STOCK" ] || fail "backup is not the original exe"
 diff <(echo "$EXPECTED") <(hooks "$L/underrail.exe") >/dev/null || { diff <(echo "$EXPECTED") <(hooks "$L/underrail.exe") >&2; fail "patched exe hooks differ from the expected set"; }
 FIRST=$(md5 "$L/underrail.exe")
-nomono "$L/underrailfix-patcher" "$L" >/dev/null || fail "re-run"
+nomono "$L/underrailfix-patcher" "$L" --32bit >/dev/null || fail "re-run"
 [ "$(md5 "$L/underrail.exe")" = "$FIRST" ] || fail "re-running the patcher changed the result (patches stacking?)"
 cp "$L/underrail.exe.backup" "$L/underrail.exe"          # a game update / Verify files puts an original back
-nomono "$L/underrailfix-patcher" "$L" >/dev/null || fail "patch after game update"
+nomono "$L/underrailfix-patcher" "$L" --32bit >/dev/null || fail "patch after game update"
 [ "$(md5 "$L/underrail.exe.backup")" = "$STOCK" ] || fail "backup after game update is not the original"
-nomono "$L/underrailfix-patcher" "$L" --uninstall >/dev/null || fail "uninstall"
+nomono "$L/underrailfix-patcher" "$L" --32bit --uninstall >/dev/null || fail "uninstall"
 [ "$(md5 "$L/underrail.exe")" = "$STOCK" ] || fail "uninstall didn't restore the original exe"
 [ ! -e "$L/underrail.exe.backup" ] || fail "uninstall left the backup"
 echo "   ok: install, re-run, game update, uninstall; $(echo "$EXPECTED" | wc -l) hooks"
 
 echo "== Windows patcher (run with mono)"
 W="$WORK/windows"; game_copy "$W"
-(cd "$W" && mono UnderrailFix-Patcher.exe "$W" </dev/null >/dev/null) || fail "Windows patcher install"
+(cd "$W" && mono UnderrailFix-Patcher.exe "$W" --32bit </dev/null >/dev/null) || fail "Windows patcher install"
 diff <(echo "$EXPECTED") <(hooks "$W/underrail.exe") >/dev/null || fail "Windows patcher: hooks differ"
 [ "$(md5 "$W/underrail.exe")" = "$FIRST" ] || fail "Windows and Linux patchers produce different exes"
-(cd "$W" && mono UnderrailFix-Patcher.exe "$W" --uninstall </dev/null >/dev/null) || fail "Windows patcher uninstall"
+(cd "$W" && mono UnderrailFix-Patcher.exe "$W" --32bit --uninstall </dev/null >/dev/null) || fail "Windows patcher uninstall"
 [ "$(md5 "$W/underrail.exe")" = "$STOCK" ] || fail "Windows patcher uninstall didn't restore the original"
 echo "   ok: same patched exe as Linux, uninstall restores the original"
 EXPECTED64="$(printf '%s\n' "$EXPECTED" "FixMusic.Create" "FixMusic.Dispose" "FixMusic.Play" "FixMusic.SetLoop" "FixMusic.SetPitch" "FixMusic.SetVolume" "FixMusic.Status" "FixMusic.Stop" "FnaMode.SaveTypeName" "FnaMode.SavedName" "FnaMode.WrittenAssembly" "FnaMode.WrittenTypeName" "FnaWindow.Form" "GalaxyBridge..ctor" "FnaWindow.GetBorderStyle" "FnaWindow.GetHeight" "FnaWindow.GetLocation" "FnaWindow.GetWidth" "FnaWindow.Hwnd" "FnaWindow.SetBorderStyle" "FnaWindow.SetLocation" "FnaWindow.SetStartPosition" "SteamBridge.ClearAchievement" "SteamBridge.IncrementStat" "SteamBridge.InitSteam" "SteamBridge.IsOnSteamDeck" "SteamBridge.IsRunningOnWine" "SteamBridge.ResetAllStats" "SteamBridge.SetAchievement" "SteamBridge.ShowKeyboard" "SteamBridge.ShutdownSteam" | LC_ALL=C sort)"
@@ -120,22 +123,22 @@ mcs -nologo -out:"$WORK/ListRefs.exe" -r:"$CECIL_DIR/Mono.Cecil.dll" "$WORK/List
 echo "== 64-bit Linux patcher (Mono hidden)"
 X="$WORK/linux64"; game_copy "$X" "$DIST64"
 SFML_STOCK="$(sfml_sums "$X")"
-nomono "$X/underrailfix-patcher-64bit" "$X" >/dev/null || fail "64-bit install"
+nomono "$X/underrailfix-patcher" "$X" >/dev/null || fail "64-bit install"
 [ "$(md5 "$X/underrail.exe.backup")" = "$STOCK" ] || fail "64-bit: backup is not the original exe"
 diff <(echo "$EXPECTED64") <(hooks "$X/underrail.exe") >/dev/null || { diff <(echo "$EXPECTED64") <(hooks "$X/underrail.exe") >&2; fail "64-bit: hooks differ from the expected set"; }
 [ "$(xna_refs "$X/underrail.exe")" = 0 ] || fail "64-bit: the exe still references XNA"
 [ "$(xna_refs "$X/UnderrailFix64.dll")" = 0 ] || fail "64-bit: UnderrailFix64.dll still references XNA"
 for f in $SFML; do [ "$(md5 "$X/$f.backup")" = "$(md5 "$L/$f")" ] || fail "64-bit: $f.backup is not the original"; done
 FIRST64=$(md5 "$X/underrail.exe")
-nomono "$X/underrailfix-patcher-64bit" "$X" >/dev/null || fail "64-bit re-run"
+nomono "$X/underrailfix-patcher" "$X" >/dev/null || fail "64-bit re-run"
 [ "$(md5 "$X/underrail.exe")" = "$FIRST64" ] || fail "64-bit: re-running changed the result"
 cp -r "$DIST"/. "$X/"                                       # switching back: the standard download over it
-nomono "$X/underrailfix-patcher" "$X" >/dev/null || fail "standard patcher over a 64-bit install"
+nomono "$X/underrailfix-patcher" "$X" --32bit >/dev/null || fail "32-bit over a 64-bit install"
 [ "$(md5 "$X/underrail.exe")" = "$FIRST" ] || fail "standard over 64-bit: not the standard patched exe"
 [ "$(sfml_sums "$X")" = "$SFML_STOCK" ] || fail "standard over 64-bit: sfmlnet DLLs not restored"
-nomono "$X/underrailfix-patcher-64bit" "$X" >/dev/null || fail "64-bit over a standard install"
+nomono "$X/underrailfix-patcher" "$X" >/dev/null || fail "64-bit over a standard install"
 [ "$(md5 "$X/underrail.exe")" = "$FIRST64" ] || fail "64-bit over standard: different exe"
-nomono "$X/underrailfix-patcher-64bit" "$X" --uninstall >/dev/null || fail "64-bit uninstall"
+nomono "$X/underrailfix-patcher" "$X" --uninstall >/dev/null || fail "64-bit uninstall"
 [ "$(md5 "$X/underrail.exe")" = "$STOCK" ] || fail "64-bit uninstall didn't restore the original exe"
 [ "$(sfml_sums "$X")" = "$SFML_STOCK" ] || fail "64-bit uninstall didn't restore the sfmlnet DLLs"
 ls "$X"/*.backup >/dev/null 2>&1 && fail "64-bit uninstall left backups"
@@ -143,14 +146,14 @@ echo "   ok: install, re-run, standard <-> 64-bit, uninstall; $(echo "$EXPECTED6
 
 echo "== 64-bit Windows patcher (run with mono)"
 Y="$WORK/windows64"; game_copy "$Y" "$DIST64"
-(cd "$Y" && mono UnderrailFix-Patcher-64bit.exe "$Y" </dev/null >/dev/null) || fail "64-bit Windows patcher install"
+(cd "$Y" && mono UnderrailFix-Patcher.exe "$Y" </dev/null >/dev/null) || fail "64-bit Windows patcher install"
 [ "$(md5 "$Y/underrail.exe")" = "$FIRST64" ] || fail "64-bit Windows and Linux patchers produce different exes"
-(cd "$Y" && mono UnderrailFix-Patcher-64bit.exe "$Y" --uninstall </dev/null >/dev/null) || fail "64-bit Windows patcher uninstall"
+(cd "$Y" && mono UnderrailFix-Patcher.exe "$Y" --uninstall </dev/null >/dev/null) || fail "64-bit Windows patcher uninstall"
 [ "$(md5 "$Y/underrail.exe")" = "$STOCK" ] || fail "64-bit Windows patcher uninstall didn't restore the original"
 [ "$(sfml_sums "$Y")" = "$SFML_STOCK" ] || fail "64-bit Windows patcher uninstall didn't restore the sfmlnet DLLs"
 echo "   ok: same patched exe as Linux, uninstall restores the originals"
 echo "== Linux patchers: baseline x86-64 (no AVX/AVX2/AVX-512, which not every CPU has)"
-for f in "$DIST"/linux/*.bin "$DIST"/linux/*.so "$DIST64"/linux/*.bin "$DIST64"/linux/*.so; do
+for f in "$DIST"/linux/*.bin "$DIST"/linux/*.so; do
     n=$(objdump -d --no-show-raw-insn "$f" | grep -c -E '%[yz]mm[0-9]' || true)
     [ "$n" = 0 ] || fail "$(basename "$f") uses AVX/AVX-512 instructions ($n): it was built from a CPU-specific Mono"
 done

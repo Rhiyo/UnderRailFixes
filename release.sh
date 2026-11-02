@@ -56,18 +56,14 @@ mcs -nologo -out:"$WORK/GameVersion.exe" -r:"$CECIL_DIR/Mono.Cecil.dll" -r:Syste
 GAME_VERSION="$(MONO_PATH="$CECIL_DIR" mono "$WORK/GameVersion.exe" "$ORIG")" || die "couldn't read the game version"
 STEAM_BUILD="$(grep -oP '"buildid"\s+"\K[0-9]+' "$GAME/../../appmanifest_250520.acf" 2>/dev/null || echo unknown)"
 
-# Two downloads: the standard one, and the experimental 64-bit one (its own patcher; see README).
+# One download: the patcher installs the 64-bit mode, or with --32bit the 32-bit one.
 NAME="UnderRailFixes-$VERSION"
-NAME64="UnderRailFixes-64bit-experimental-$VERSION"
 notice() {     # <title> <url> <licence file>
     echo "=== $1 ==="; echo "$2"; echo; cat "$3"; echo
 }
 notices() {
     notice "Mono.Cecil (Mono.Cecil.dll, and inside the Linux patcher)" https://github.com/jbevain/cecil src/Release/cecil.txt
     notice "Mono runtime and class libraries (inside the Linux patcher: linux/*.bin, linux/libmono-native.so)" https://github.com/mono/mono src/Release/mono.txt
-}
-notices64() {
-    notices
     notice "NVorbis 0.8.6 (NVorbis.dll)" https://github.com/NVorbis/NVorbis src/Release/nvorbis.txt
     notice "FNA (FNA.dll)" https://github.com/FNA-XNA/FNA lib/fna/licenses/FNA.txt
     notice "FNA: LzxDecoder (inside FNA.dll)" https://github.com/FNA-XNA/FNA lib/fna/licenses/FNA-lzxdecoder.txt
@@ -92,9 +88,8 @@ package() {     # <dist folder> <name> <notices function>
     (cd "$WORK" && zip -qr -y "$HERE/dist/release/$2.zip" "$2")
 }
 package dist/UnderrailFix "$NAME" notices
-package dist/UnderrailFix-64bit "$NAME64" notices64
-ZIP="dist/release/$NAME.zip"; ZIP64="dist/release/$NAME64.zip"
-SHA="$(sha256sum "$ZIP" | cut -d' ' -f1)"; SHA64="$(sha256sum "$ZIP64" | cut -d' ' -f1)"
+ZIP="dist/release/$NAME.zip"
+SHA="$(sha256sum "$ZIP" | cut -d' ' -f1)"
 
 # 6. Release notes.
 NOTES="$WORK/notes.md"
@@ -110,14 +105,9 @@ $DESCRIPTION
 2. Windows: run \`UnderrailFix-Patcher.exe\`. Linux / Steam Deck: run \`./underrailfix-patcher\`.
 3. Start the game; settings are in **Options -> Fixes** and \`UnderrailFix.ini\`.
 
-After a game update, run the patcher again. To uninstall, run it with \`--uninstall\`. Details in the [README](https://github.com/$REPO#readme).
+The patcher installs the 64-bit mode (FNA instead of Microsoft XNA). For the 32-bit mode (the game's own engine), run \`UnderrailFix-Patcher-32bit.bat\` on Windows or \`./underrailfix-patcher --32bit\` on Linux. After a game update, run the patcher again. To uninstall, run it with \`--uninstall\`. Details in the [README](https://github.com/$REPO#readme).
 
-### Experimental 64-bit (\`$NAME64.zip\`)
-Runs the game as a 64-bit process on FNA instead of Microsoft XNA, with all the fixes above. **Largely untested**: played under Proton only, not yet on Windows. Same steps with \`UnderrailFix-Patcher-64bit.exe\` / \`./underrailfix-patcher-64bit\`; to go back, run the standard patcher, or \`--uninstall\`. Saves and settings stay readable by the normal game. Details in the [README](https://github.com/$REPO#experimental-64-bit).
-
-SHA-256:
-- \`$NAME.zip\`: \`$SHA\`
-- \`$NAME64.zip\`: \`$SHA64\`
+SHA-256 \`$NAME.zip\`: \`$SHA\`
 EOF
 
 # 7. Commit the version (if it changed), tag, push, publish.
@@ -125,5 +115,5 @@ if [ -n "$(git status --porcelain -- "$VFILE")" ]; then git commit -q -m "Releas
 committed=1
 git tag -a "v$VERSION" -m "UnderRailFixes $VERSION (UnderRail $GAME_VERSION)"
 git push -q origin "$BRANCH" "v$VERSION"
-gh release create "v$VERSION" "$ZIP" "$ZIP64" --repo "$REPO" --title "UnderRailFixes $VERSION" --notes-file "$NOTES"
+gh release create "v$VERSION" "$ZIP" --repo "$REPO" --title "UnderRailFixes $VERSION" --notes-file "$NOTES"
 echo "Released v$VERSION: https://github.com/$REPO/releases/tag/v$VERSION"

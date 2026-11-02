@@ -3,7 +3,8 @@
 #   UnderrailFix.dll               runtime fixes, loaded by the patched game (all platforms)
 #   UnderrailFix-Patcher.exe       Windows patcher (.NET Framework 4, built into Windows) + Mono.Cecil.dll
 #   underrailfix-patcher           Linux patcher (single binary with the Mono runtime bundled)
-# and the experimental 64-bit download into dist/UnderrailFix-64bit/ (UnderrailFix-Patcher-64bit.exe, FNA, ...).
+#   UnderrailFix64.dll, FNA.dll, x64/, NVorbis.dll, UnderrailSteamHost.exe   the 64-bit mode (the patcher's default;
+#                                  --32bit installs the 32-bit mode, which uses only UnderrailFix.dll)
 # ./build.sh install   also patches the local Steam copy.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -40,11 +41,11 @@ mcs -nologo -out:"$HERE/build/Retarget.exe" -r:"$CECIL" -r:System.Core.dll "$HER
 MONO_PATH="$(dirname "$CECIL")" mono "$HERE/build/Retarget.exe" "$OUT/UnderrailFix.dll" "$REF"
 cp "$CECIL" "$OUT/"
 
-# Experimental 64-bit (its own download, dist/UnderrailFix-64bit): the runtime plus a copy pointed at FNA, FNA.dll
-# with its native libraries in x64/ (tools/fetch-fna.sh fills lib/fna once), the music decoder and the 32-bit Steam helper.
-OUT64="$HERE/dist/UnderrailFix-64bit"
+# The 64-bit mode: a copy of the runtime pointed at FNA, FNA.dll with its native libraries in x64/ (tools/fetch-fna.sh
+# fills lib/fna once), the music decoder and the 32-bit Steam helper.
+OUT64="$OUT"
 mkdir -p "$OUT64/x64"
-cp "$OUT/UnderrailFix.dll" "$CECIL" "$NVORBIS" "$OUT64/"
+cp "$NVORBIS" "$OUT64/"
 # The helper also runs GOG Galaxy for the GOG version: compiled against the game's GalaxyCSharp.dll (loaded from the game
 # folder at run time, only on GOG).
 mcs -nologo -optimize+ -platform:x86 -out:"$OUT64/UnderrailSteamHost.exe" -r:"$GAME/GalaxyCSharp.dll" "$HERE/src/SteamHost/SteamHost.cs"
@@ -53,23 +54,25 @@ cp "$HERE/lib/fna/FNA.dll" "$OUT64/"
 cp "$HERE"/lib/fna/x64/*.dll "$OUT64/x64/"
 MONO_PATH="$(dirname "$CECIL")" mono "$HERE/build/Retarget.exe" --fna "$OUT/UnderrailFix.dll" "$OUT64/FNA.dll" "$OUT64/UnderrailFix64.dll"
 
-# The Linux patcher bundles a Mono runtime: Arch's official mono package (baseline x86-64), never the build machine's,
-# which may be built for newer CPUs (CachyOS's x86-64-v4 mono has AVX-512 and crashed on Zen 3). Fetched once into
-# lib/mono-generic and checked against a known hash (and Arch's signature where pacman's keyring is there).
-MONO_PKG=mono-6.12.0.206-1-x86_64.pkg.tar.zst
-MONO_PKG_SHA=5c30dcc286b1f65073cf267a4befa5ef4ae282351c4337beada740a15ae1e528
+# The Linux patcher bundles a Mono runtime: the Mono project's own Ubuntu 20.04 build of Mono 6.12 (baseline x86-64,
+# glibc 2.29, so it runs on Ubuntu 20.04+, Debian 11+, SteamOS...), never the build machine's: that may need a newer
+# glibc (Arch's: 2.38) or be built for newer CPUs (CachyOS's x86-64-v4 mono has AVX-512 and crashed on Zen 3).
+# Fetched once into lib/mono-generic, each package checked against its known hash.
+MONO_URL=https://download.mono-project.com/repo/ubuntu/pool/main/m/mono
+MONO_VER=6.12.0.200-0xamarin2+ubuntu2004b1
 MONO_GENERIC="$HERE/lib/mono-generic"
 if [ ! -f "$MONO_GENERIC/mono-sgen" ] || [ ! -f "$MONO_GENERIC/libmono-native.so" ]; then
-    mkdir -p "$HERE/build/mono-pkg" "$MONO_GENERIC"
-    curl -fsSL -o "$HERE/build/mono-pkg/$MONO_PKG" "https://geo.mirror.pkgbuild.com/extra/os/x86_64/$MONO_PKG"
-    curl -fsSL -o "$HERE/build/mono-pkg/$MONO_PKG.sig" "https://geo.mirror.pkgbuild.com/extra/os/x86_64/$MONO_PKG.sig"
-    echo "$MONO_PKG_SHA  $HERE/build/mono-pkg/$MONO_PKG" | sha256sum -c --quiet - || { echo "$MONO_PKG doesn't match the expected hash" >&2; exit 1; }
-    if [ -f /etc/pacman.d/gnupg/pubring.kbx ]; then
-        gpgv --keyring /etc/pacman.d/gnupg/pubring.kbx "$HERE/build/mono-pkg/$MONO_PKG.sig" "$HERE/build/mono-pkg/$MONO_PKG" 2>/dev/null || { echo "$MONO_PKG: bad signature" >&2; exit 1; }
-    fi
-    tar --zstd -xf "$HERE/build/mono-pkg/$MONO_PKG" -C "$HERE/build/mono-pkg" usr/bin/mono-sgen usr/lib/libmono-native.so.0.0.0
-    cp "$HERE/build/mono-pkg/usr/bin/mono-sgen" "$MONO_GENERIC/mono-sgen"
-    cp "$HERE/build/mono-pkg/usr/lib/libmono-native.so.0.0.0" "$MONO_GENERIC/libmono-native.so"
+    rm -rf "$HERE/build/mono-pkg"; mkdir -p "$HERE/build/mono-pkg/x" "$MONO_GENERIC"
+    for p in "mono-runtime-sgen 1604a2a7f241be38265931dbe8af0ab6638bc98cf7d2dccf25e4f1fe7b357ce0" \
+             "mono-runtime-common dc92fc399d9c75b97e4ce1e43de98837311504cd36dcdee538aae4875818c7f2"; do
+        set -- $p
+        deb="$HERE/build/mono-pkg/${1}_${MONO_VER}_amd64.deb"
+        curl -fsSL -o "$deb" "$MONO_URL/${1}_${MONO_VER/+/%2B}_amd64.deb"
+        echo "$2  $deb" | sha256sum -c --quiet - || { echo "$(basename "$deb") doesn't match the expected hash" >&2; exit 1; }
+        (cd "$HERE/build/mono-pkg/x" && bsdtar -xOf "$deb" 'data.tar.*' | bsdtar -xf -)
+    done
+    cp "$HERE/build/mono-pkg/x/usr/bin/mono-sgen" "$MONO_GENERIC/mono-sgen"
+    cp "$HERE/build/mono-pkg/x/usr/lib/libmono-native.so.0.0.0" "$MONO_GENERIC/libmono-native.so"
 fi
 
 # The patchers: Windows (.NET Framework 4) and Linux. The Linux one is the patcher, Cecil and the Mono runtime bundled
@@ -85,18 +88,21 @@ patchers() {     # <dist folder> <Windows exe name> <Linux name> [mcs flags]
     cp "$MONO_GENERIC/libmono-native.so" "$dir/linux/libmono-native.so"
     cat > "$dir/$name" <<SH
 #!/bin/sh
-# Linux patcher for UnderRailFixes. Usage: ./$name [game folder] [--uninstall]
+# Linux patcher for UnderRailFixes. Usage: ./$name [game folder] [--32bit] [--uninstall]
 here="\$(cd "\$(dirname "\$0")" && pwd)"
 # No folder given: the folder this script is in (it's meant to be copied into the Underrail folder).
 case " \$* " in *" /"*|*" ."*|*" ~"*) ;; *) [ -f "\$here/underrail.exe" ] && set -- "\$here" "\$@" ;; esac
-LD_LIBRARY_PATH="\$here/linux\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}" exec "\$here/linux/$name.bin" "\$@"
+# TERM=dumb: Mono 6.12 can't read the newer terminfo format (ncurses 6.1+, e.g. xterm-256color) and crashes at the
+# first console write (mono/mono#21862); with TERM=dumb it doesn't read terminfo at all. The patcher only prints lines.
+TERM=dumb LD_LIBRARY_PATH="\$here/linux\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}" exec "\$here/linux/$name.bin" "\$@"
 SH
     chmod +x "$dir/$name" "$dir/linux/$name.bin"
     cp "$HERE/README.md" "$dir/"
 }
 patchers "$OUT" UnderrailFix-Patcher.exe underrailfix-patcher
-patchers "$OUT64" UnderrailFix-Patcher-64bit.exe underrailfix-patcher-64bit -define:EXPERIMENTAL_64BIT
-echo "Built $OUT and $OUT64"
+# Windows: a double-click way to the 32-bit mode.
+printf '@echo off\r\nrem Installs UnderRailFixes in the 32-bit mode (the game'"'"'s own Microsoft XNA) instead of the default 64-bit mode.\r\n"%%~dp0UnderrailFix-Patcher.exe" "%%~dp0." --32bit\r\npause\r\n' > "$OUT/UnderrailFix-Patcher-32bit.bat"
+echo "Built $OUT"
 
 if [ "${1:-}" = install ]; then
     if pgrep -ix 'underrail.exe' >/dev/null; then echo "Close Underrail first." >&2; exit 1; fi

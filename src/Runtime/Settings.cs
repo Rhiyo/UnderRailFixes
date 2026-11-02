@@ -180,9 +180,11 @@ Log=0
     public static bool SaveScreenshots => Flag("SaveScreenshots");
     public static int? Width => Number("Width");
     public static int? Height => Number("Height");
-    public static int ZoomMin => Number("ZoomMin") ?? DefaultZoomMin;
-    public static int ZoomMax => Number("ZoomMax") ?? DefaultZoomMax;
-    public static int ZoomDefault => Number("ZoomDefault") ?? DefaultZoom;
+    // 25 % at least: far below it the game would draw so many tiles it would nearly freeze.
+    public static int ZoomMin => Zoom("ZoomMin", DefaultZoomMin);
+    public static int ZoomMax => Zoom("ZoomMax", DefaultZoomMax);
+    public static int ZoomDefault => Zoom("ZoomDefault", DefaultZoom);
+    static int Zoom(string key, int fallback) { var n = Number(key); return n.HasValue ? Math.Max(25, Math.Min(1000, n.Value)) : fallback; }
     public static int? UiScale => Number("UiScale");     // null = auto
     public static bool UiScaleFix => Flag("UiScaleFix");
     public static string UiInsetX => Get("UiInsetX");
@@ -211,6 +213,9 @@ Log=0
     static int Percent(string key, int fallback, int min, int max) { int n; return int.TryParse((Get(key) ?? "").TrimEnd('%', ' '), out n) ? Math.Max(min, Math.Min(max, n)) : fallback; }
     public static int KeyholeTransparency => Percent("KeyholeTransparency", 75, 0, 100);
     public static int KeyholeSize => Percent("KeyholeSize", 100, 25, 300);
+    // Not in the ini or the Fixes tab: 1 = draw the keyhole's front picture in tiles of at most 2048 even where one
+    // picture works (for testing the tiled path that Microsoft XNA needs above 2048).
+    public static bool KeyholeTiles => Get("KeyholeTiles") == "1";
     public static int ShowCoveredTransparency => Percent("ShowCoveredTransparency", 75, 0, 100);
     public static bool WindowIcon => Flag("WindowIcon");
     public static bool FrameRateFix { get { string v = Get("FrameRateFix"); return v == "1" || string.Equals(v, "on", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase); } }     // off unless set (not tested thoroughly)
@@ -232,10 +237,14 @@ Log=0
     // and in the file.
     public static void SetValue(string key, string value) { Set(key, value); }
 
+    // Bumped on every change, so code reading settings per frame can keep its own copy (ShowCovered).
+    public static int Changes { get; private set; }
+
     static void Set(string key, string value)
     {
         if (string.Equals(Get(key), value, StringComparison.OrdinalIgnoreCase)) return;
         Values[key] = value;
+        Changes++;
         try
         {
             var lines = File.Exists(Path) ? File.ReadAllLines(Path).ToList() : new List<string>();
