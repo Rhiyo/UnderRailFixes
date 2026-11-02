@@ -40,7 +40,6 @@ public static class ShowCovered
     {
         if (down || !On) return down;
         forced = true;
-        diagReverse++;
         return true;
     }
 
@@ -58,7 +57,7 @@ public static class ShowCovered
     public static void Add(bym layers, a2f outline)
     {
         if (transition) { transition = false; forced = true; }
-        if (forced) { forced = false; Marked.Remove(outline); Marked.Add(outline, Mark); diagAdd++; }
+        if (forced) { forced = false; Marked.Remove(outline); Marked.Add(outline, Mark); }
         layers.a(outline);
     }
 
@@ -81,16 +80,9 @@ public static class ShowCovered
     public static void WorldDone(a7m view, cp9 context)
     {
         try { Keyhole.Done(view, context); }
-        catch (Exception ex) { KeyholeDiag("ERROR " + ex); if (!failed) { failed = true; Log.Write("show covered (keyhole): " + ex); } }
+        catch (Exception ex) { if (!failed) { failed = true; Log.Write("show covered (keyhole): " + ex); } }
     }
 
-    // TEMPORARY keyhole diagnostics, once a second.
-    static DateTime keyholeDiagNext;
-    internal static bool KeyholeDiagDue { get { if (DateTime.Now < keyholeDiagNext) return false; keyholeDiagNext = DateTime.Now.AddSeconds(1); return true; } }
-    internal static void KeyholeDiag(string line)
-    {
-        try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UnderrailFix-diag.log"), DateTime.Now.ToString("HH:mm:ss") + " keyhole: " + line + "\n"); } catch { }
-    }
 
     internal static List<a2f> DrawnLayers(a7m view) { View v; return Views.TryGetValue(view, out v) ? v.Drawn : null; }
     internal static bool IsCreature(a7m view, bym owner) { View v; return owner != null && Views.TryGetValue(view, out v) && v.Creatures.Contains(owner); }
@@ -118,14 +110,12 @@ public static class ShowCovered
                 // Ours: never drawn whole; drawn on the covered part with this creature's effect, or not at all.
                 var layer = outlines[i];
                 outlines.RemoveAt(i);
-                diagMarkedSeen++;
                 if (drawn) state.Masked.Insert(0, layer);
             }
             else
             {
                 // The game's own outline (Tab, hovering, Always in combat) stays in its pass; with a fill, the covered
                 // part is still filled, drawn after that pass so it's above the outline.
-                diagUnmarkedSeen++;
                 if (drawn && effect != FixSettings.CoveredEffect.Outline) state.Masked.Insert(0, outlines[i]);
             }
         }
@@ -137,8 +127,8 @@ public static class ShowCovered
         View state;
         if (!Views.TryGetValue(view, out state)) return;
         try { if (state.Masked.Count > 0) Draw(view, context, state); }
-        catch (Exception ex) { Diag("ERROR " + ex); if (!failed) { failed = true; Log.Write("show covered: " + ex); } }
-        finally { Diag("pass: drawn " + state.Drawn.Count + " masked " + state.Masked.Count); DiagFlush(true); state.Drawn.Clear(); state.Masked.Clear(); Effects.Clear(); }
+        catch (Exception ex) { if (!failed) { failed = true; Log.Write("show covered: " + ex); } }
+        finally { state.Drawn.Clear(); state.Masked.Clear(); Effects.Clear(); }
     }
 
     static bool failed;
@@ -171,24 +161,6 @@ public static class ShowCovered
             return attitude == global::h.a || attitude == global::h.b;
         }
         catch { return false; }
-    }
-
-    // TEMPORARY diagnostics (UnderrailFix-diag.log), once a second.
-    static DateTime diagNext;
-    static readonly System.Text.StringBuilder diagFrame = new System.Text.StringBuilder();
-    static int diagReverse, diagAdd, diagMarkedSeen, diagUnmarkedSeen;
-    static void Diag(string line) { diagFrame.AppendLine(line); }
-    static void DiagFlush(bool any)
-    {
-        if (DateTime.Now < diagNext) { diagFrame.Clear(); return; }
-        diagNext = DateTime.Now.AddSeconds(1);
-        try
-        {
-            System.IO.File.AppendAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UnderrailFix-diag.log"),
-                DateTime.Now.ToString("HH:mm:ss") + " reverse-forced " + diagReverse + " marked-adds " + diagAdd + " outlines in pass: marked " + diagMarkedSeen + " unmarked " + diagUnmarkedSeen + "\n" + diagFrame);
-        }
-        catch { }
-        diagFrame.Clear(); diagReverse = diagAdd = diagMarkedSeen = diagUnmarkedSeen = 0;
     }
 
     // --- Drawing --------------------------------------------------------------------------------------------------
@@ -365,9 +337,8 @@ public static class ShowCovered
         var owner = outlineLayer.n;
         if (owner == null) return result;
         int last = -1;
-        int own = 0;
-        for (int i = 0; i < drawn.Count; i++) if (drawn[i].n == owner) { last = i; own++; }
-        if (last < 0) { Diag("  outline " + outlineLayer.GetHashCode() + ": creature's layers not found among " + drawn.Count); return result; }
+        for (int i = 0; i < drawn.Count; i++) if (drawn[i].n == owner) last = i;
+        if (last < 0) return result;
         var area = (Rectangle)Placed.GetValue(outlineLayer);
         area.Inflate(8, 8);
         for (int i = last + 1; i < drawn.Count; i++)
@@ -376,7 +347,6 @@ public static class ShowCovered
             if (layer.n == owner || layer.d == null || !layer.b || (layer.n != null && creatures.Contains(layer.n))) continue;
             if (((Rectangle)Placed.GetValue(layer)).Intersects(area)) result.Add(layer);
         }
-        Diag("  outline " + outlineLayer.GetHashCode() + " at " + area + ": own layers " + own + ", last at " + last + "/" + drawn.Count + ", covering " + result.Count);
         return result;
     }
 

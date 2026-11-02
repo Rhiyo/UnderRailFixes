@@ -324,7 +324,6 @@ public static class UnderrailOptions
     static void Failed(string what, Exception ex)
     {
         Log.Write("options: the " + what + " rows failed: " + ex);
-        try { System.IO.File.AppendAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "UnderrailFix-diag.log"), DateTime.Now.ToString("HH:mm:ss") + " options: " + what + ": " + ex + "\n"); } catch { }     // TEMPORARY
     }
 
     // End of t1.d (Accept saves the options): write what changed.
