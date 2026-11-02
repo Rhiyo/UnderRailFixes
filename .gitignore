@@ -9,3 +9,5 @@ dist/
 lib/
 # Local tool state.
 .serena/
+# Claude Code worktrees (local only).
+.claude/worktrees/
