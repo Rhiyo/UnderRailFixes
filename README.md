@@ -174,8 +174,10 @@ Run the patcher with `--uninstall` (on Windows, from a command prompt: `Underrai
 
 ## Notes for Linux (Proton)
 
-- If the floor tiles flicker black with the **Advanced** shader, add `FNA3D_FORCE_DRIVER=D3D11 %command%` to the launch options ([FNA3D#274](https://github.com/FNA-XNA/FNA3D/issues/274)). Not needed with the 64-bit download, which sets it itself.
-- On GE-Proton the game may keep running after you quit: Wine's PulseAudio driver hangs while shutting down (GE's controller-audio patches change it). Official Proton and Proton-CachyOS don't have this. On GE-Proton, `WINEDLLOVERRIDES="winepulse.drv=d" %command%` in the launch options should avoid it, by making Wine use its ALSA audio driver instead (PipeWire and PulseAudio both provide ALSA). This workaround hasn't been confirmed yet. With the 64-bit download it didn't seem to be needed in testing.
+> **With the [64-bit download](#experimental-64-bit) none of the launch options below are needed:** it sets Direct3D 11 itself, and the exit hang didn't occur in testing.
+
+- If the floor tiles flicker black with the **Advanced** shader, add `FNA3D_FORCE_DRIVER=D3D11 %command%` to the launch options ([FNA3D#274](https://github.com/FNA-XNA/FNA3D/issues/274)).
+- On GE-Proton the game may keep running after you quit: Wine's PulseAudio driver hangs while shutting down (GE's controller-audio patches change it). Official Proton and Proton-CachyOS don't have this. On GE-Proton, `WINEDLLOVERRIDES="winepulse.drv=d" %command%` in the launch options should avoid it, by making Wine use its ALSA audio driver instead (PipeWire and PulseAudio both provide ALSA). This workaround hasn't been confirmed yet.
 
 ## Reporting problems
 
