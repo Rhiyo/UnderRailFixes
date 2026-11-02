@@ -1,6 +1,6 @@
 # UnderRailFixes
 
-Display fixes for UnderRail, for ultrawide and other resolutions the game doesn't list:
+Display and quality-of-life fixes for UnderRail, for ultrawide and other resolutions the game doesn't list, and more:
 
 - **Resolution fix:** the resolution list comes from the modes your monitor reports, so 5120x1440, 3440x1440, 2560x1080 and the rest are all selectable. Long lists scroll, and they stay inside the options window. The resolution is stored in `UnderrailFix.ini` (default: your desktop resolution), and the game's `config.dat` is left alone. Save screenshots on screens bigger than 2048 pixels show the view instead of a cropped corner.
 - **Insets:** the HUD and menus can be moved in from the screen's edges into a centred area, while the world still fills the screen.
@@ -8,6 +8,8 @@ Display fixes for UnderRail, for ultrawide and other resolutions the game doesn'
 - **Zoom fix:** the world is the same size on every screen, as it is at 1080p, with more room to zoom out. The zoom indicator shows the same numbers as at 1080p.
 - **Frame rate (off by default, not tested thoroughly yet):** no more 60 FPS cap; runs at your monitor's refresh rate, with an optional cap.
 - **Menu backgrounds:** optionally show the whole menu art instead of the game's crop.
+- **Occluded characters (off by default):** characters hidden behind walls and other scenery are shown, with a see-through keyhole, a line or dot pattern, a fill or an outline, chosen separately for you, hostile characters and everyone else. See [below](#occluded-characters).
+- **Window icon:** the game window gets its icon under Proton too.
 - **In-game settings:** an **Options → Fixes** tab; changes apply without restarting.
 - **Experimental 64-bit** (separate download): runs the game as a 64-bit process. See [below](#experimental-64-bit).
 
@@ -56,6 +58,14 @@ UiScaleFix=1      ; 1 = interface scale, insets and menu backgrounds below; 0 = 
 UiScale=auto      ; interface scale: auto = whole multiples (100% below 4320p, 200% from 4320p ...); or a percentage
 UiInsetX=0        ; space kept clear at the left and right edges (total, split evenly): 0.1 or 10% = 5% each side, 256 or 256px = 128 px each side
 UiInsetY=0        ; same for the top and bottom
+GameplayFixes=1   ; 1 = the gameplay fixes below (occluded characters); 0 = none of them
+ShowCovered=0     ; with GameplayFixes=1: 1 = show characters hidden behind walls and scenery (off by default)
+ShowCoveredPlayer=keyhole  ; for you: off, keyhole, lines, dither, fill or outline
+ShowCoveredHostile=lines   ; for hostile and unfriendly characters
+ShowCoveredOther=lines     ; for everyone else
+ShowCoveredTransparency=75 ; how see-through the lines, dots, fill and outline are, in percent
+KeyholeTransparency=75     ; how see-through the keyhole is at its centre, in percent
+KeyholeSize=100            ; keyhole size, in percent of the default (about a character's height)
 DpiAware=1        ; Windows only: stop Windows display scaling from stretching the game
 WindowIcon=1      ; give the game window the game's icon (under Proton the task bar otherwise shows a generic one)
 BackgroundFit=0   ; with UiScaleFix=1, menu backgrounds: 0 = fill the screen, cropping the art (as the game does); 1 = show the whole image, never stretched
@@ -66,7 +76,7 @@ Log=0             ; 1 = write UnderrailFix.log (for bug reports)
 
 ### Save screenshots
 
-Each save has a screenshot, shown in the load menu. On screens bigger than 2048 pixels the game means to shrink the screen to fit 2048, but only the top-left corner ends up in the picture. With `SaveScreenshots=1` (the default, with `ResolutionFix=1`; also **Options → Fixes → Save screenshots**) the screenshot shows what a 1920x1080 screen would show: the 16:9 area at the centre of your screen, at 1920x1080. `0` keeps the game's own. Screens up to 2048 pixels aren't affected either way.
+Each save has a screenshot, shown in the load menu. On screens bigger than 2048 pixels the game means to shrink the screen to fit 2048, but only the top-left corner ends up in the picture. With `SaveScreenshots=1` (the default, with `ResolutionFix=1`; also **Options → Fixes → 1080p save screenshots**) the screenshot shows what a 1920x1080 screen would show: the 16:9 area at the centre of your screen, at 1920x1080. `0` keeps the game's own. Screens up to 2048 pixels aren't affected either way.
 
 ### Zoom
 
@@ -108,7 +118,7 @@ The main menu, options and loading screens are interface too, so their buttons a
 
 ### Menu backgrounds
 
-The game crops its menu art to fill the screen (it ships the art in several shapes and picks the closest). With `UiScaleFix=1` and `BackgroundFit=1` (or **Menu backgrounds: Show whole image** in Options → Fixes) you see the whole picture instead, as large as fits and centred, with black bars where its shape doesn't match the screen. It's never stretched. Either way, the menu's buttons stay where they normally are (inside the inset area, with insets).
+The game crops its menu art to fill the screen (it ships the art in several shapes and picks the closest). With `UiScaleFix=1` and `BackgroundFit=1` (or **Show whole menu backgrounds** in Options → Fixes) you see the whole picture instead, as large as fits and centred, with black bars where its shape doesn't match the screen. It's never stretched. Either way, the menu's buttons stay where they normally are (inside the inset area, with insets).
 
 ### Frame rate
 
@@ -122,6 +132,23 @@ The game runs at a fixed 60 updates and frames per second (XNA's default), whate
 | on | below the refresh rate | the cap; best if it divides the refresh rate evenly (e.g. 120 or 60 on 240 Hz), otherwise frame pacing is slightly uneven |
 | off | a number | exactly the cap, with possible tearing |
 | off | Unlimited | as fast as your GPU can go; wastes power and can make coil whine |
+
+### Occluded characters
+
+In UnderRail's isometric view, walls and other scenery in front of a character hide them. With `ShowCovered=1` (or **Options → Fixes → Gameplay → Occluded Characters → Show occluded characters**), characters hidden that way are shown, only where they're hidden. Off by default. Choose an effect separately for **Player** (you), **Hostile** (characters hostile or unfriendly to you; the game's red and orange) and **Other** (everyone else):
+
+| Effect | What you see where the character is hidden |
+|---|---|
+| **Keyhole** (default for Player) | A soft round see-through hole in the scenery in front of them, showing them and what's behind them, as Neverwinter Nights: Enhanced Edition's "keyholing". Floors are never cut. `KeyholeSize` and `KeyholeTransparency` set its size and how see-through its centre is. |
+| **Line fill** (default for Hostile and Other) | Their shape in horizontal lines, slowly drifting, in the colour the game outlines them with when you hold Tab |
+| **Dithered fill** | The same as a pattern of spaced-out dots |
+| **Fill** | The same, solid |
+| **Outline** | The game's Tab outline, on the hidden part only |
+| **Off** | Nothing |
+
+`ShowCoveredTransparency` sets how see-through the fills and outline are. The patterns keep their size against the characters at any zoom. **Reset to recommended** (next to the Occluded Characters heading) puts the effects and sliders back to the defaults.
+
+It follows the game's own rules for outlines: it shows the characters holding Tab would outline, in the same colours, and nothing if the game's **Character Outlines** option is set to Never. Other characters don't count as scenery, and where a keyhole is open, the other effects are cleared inside it. Holding Tab still shows the game's full outlines, with fills drawn on top. The game's own **Unobscuration alpha** option (Interface tab) is separate: it fades certain whole objects.
 
 ### Windows display scaling
 
@@ -137,7 +164,8 @@ Under Proton the game window has no icon of its own, so the task bar shows a gen
 
 The game is a 32-bit program, which limits how much memory it can use. The 64-bit download (`UnderRailFixes-64bit-experimental-X.Y.Z.zip`) runs it as a 64-bit process instead, with all the fixes above:
 
-- **Graphics, sound and input** use [FNA](https://fna-xna.github.io/), an open-source reimplementation of XNA (the 32-bit-only framework the game is made with). It's what the game already runs on under Proton. It uses Direct3D 11, which also avoids the shader flicker described under Linux below, without a launch option.
+- **Graphics, sound and input** use [FNA](https://fna-xna.github.io/), an open-source reimplementation of XNA (the 32-bit-only framework the game is made with). It's what the game already runs on under Proton. It uses Direct3D 11, which also avoids the shader flicker described under Linux below.
+- **No Proton launch options needed:** it sets Direct3D 11 itself, so `FNA3D_FORCE_DRIVER=D3D11` isn't needed, and in testing on GE-Proton it exited cleanly without `WINEDLLOVERRIDES="winepulse.drv=d"` (its music no longer goes through the 32-bit audio library involved in that hang).
 - **Music** is played by a built-in Ogg decoder ([NVorbis](https://github.com/NVorbis/NVorbis)), since the game's 32-bit music library can't load in a 64-bit process.
 - **Steam and GOG Galaxy** (achievements, the overlay keyboard) go through a small 32-bit helper, `UnderrailSteamHost.exe`, which loads the game's own Steam or Galaxy libraries. The game starts and stops it by itself; there's nothing extra to run. (GOG achievements in 64-bit mode haven't been tested on a GOG copy yet.)
 
@@ -151,8 +179,8 @@ Run the patcher with `--uninstall` (on Windows, from a command prompt: `Underrai
 
 ## Notes for Linux (Proton)
 
-- If the floor tiles flicker black with the **Advanced** shader, add `FNA3D_FORCE_DRIVER=D3D11 %command%` to the launch options ([FNA3D#274](https://github.com/FNA-XNA/FNA3D/issues/274)).
-- On GE-Proton the game may keep running after you quit: Wine's PulseAudio driver hangs while shutting down (GE's controller-audio patches change it). Official Proton and Proton-CachyOS don't have this. On GE-Proton, `WINEDLLOVERRIDES="winepulse.drv=d" %command%` in the launch options should avoid it, by making Wine use its ALSA audio driver instead (PipeWire and PulseAudio both provide ALSA). This workaround hasn't been confirmed yet.
+- If the floor tiles flicker black with the **Advanced** shader, add `FNA3D_FORCE_DRIVER=D3D11 %command%` to the launch options ([FNA3D#274](https://github.com/FNA-XNA/FNA3D/issues/274)). Not needed with the 64-bit download, which sets it itself.
+- On GE-Proton the game may keep running after you quit: Wine's PulseAudio driver hangs while shutting down (GE's controller-audio patches change it). Official Proton and Proton-CachyOS don't have this. On GE-Proton, `WINEDLLOVERRIDES="winepulse.drv=d" %command%` in the launch options should avoid it, by making Wine use its ALSA audio driver instead (PipeWire and PulseAudio both provide ALSA). This workaround hasn't been confirmed yet. With the 64-bit download it didn't seem to be needed in testing.
 
 ## Reporting problems
 

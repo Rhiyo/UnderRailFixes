@@ -135,6 +135,21 @@ public static class UiScaleFix
         return new Rectangle(x, y, (int)Math.Ceiling((r.Right - a.Left) / a.K) - x, (int)Math.Ceiling((r.Bottom - a.Top) / a.K) - y);
     }
 
+    internal static int ScreenWidth { get { var unused = Area; return screenW; } }
+    internal static int ScreenHeight { get { var unused = Area; return screenH; } }
+
+    // Screen pixels per UI unit.
+    internal static float Scale => Area.K;
+
+    // A rectangle in UI coordinates as screen pixels (where the game's mapped drawing puts it).
+    internal static Rectangle ToPixels(Rectangle r)
+    {
+        var a = Area;
+        if (Identity(a)) return r;
+        int x = (int)Math.Floor(r.X * a.K) + a.Left, y = (int)Math.Floor(r.Y * a.K) + a.Top;
+        return new Rectangle(x, y, (int)Math.Ceiling(r.Right * a.K) + a.Left - x, (int)Math.Ceiling(r.Bottom * a.K) + a.Top - y);
+    }
+
     // bso.abb moves the cursor to a point in the window (e.g. back to the anchor while right-dragging the camera):
     // the game gives UI coordinates, SetCursorPos needs pixels.
     public static Point ToScreen(Point p)

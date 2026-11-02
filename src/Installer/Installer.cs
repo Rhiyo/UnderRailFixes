@@ -16,6 +16,7 @@
 //   UI scale: tb.k0/k4 screen size, SpriteBatch.Begin, the world batch's MatrixTransform, ScissorRectangle,
 //   Mouse.GetState, bso.abb cursor warp and the loading screen's size reads -> UiScaleFix (UiScale.cs)
 //   insets: ci3 sizing / shaking the world view, daj.iz (in-game surface mouse bounds), a7m.b floor position, d0p full-screen dim, czo.a menu backgrounds, bg1.iv picture rectangle -> UiScaleFix.FullScreen / WorldLocation(Get) / InScreen / FloorOrigin / DimRect
+//   eg0 creature outline (reverse-highlight check, layer add), a7m layer draw / shader pass -> ShowCovered
 //   tb.Draw save screenshot: full size, then shrunk to fit 2048 -> SaveScreenshot.Limit / Shrink
 //   b5r zoom label, mv SHIFT+wheel and ci3 zoom-button steps -> UnderrailDisplayModes.ShownZoom / ZoomStep
 using System;
@@ -393,6 +394,68 @@ static class Patcher
         var surface = module.GetType("daj").Methods.Single(m => m.Name == "iz");
         Replace(surface, il2 => { il2.Emit(OpCodes.Ldarg_1); il2.Emit(OpCodes.Call, hook("UiScaleFix", "InScreen")); il2.Emit(OpCodes.Ret); });
 
+        // Gameplay, Show Covered: outlines on the covered part of characters (ShowCovered.cs).
+        {
+            var hotkey = module.GetType("TimelapseVertigo.Common.Settings.Hotkey") ?? module.GetTypes().Single(t => t.IsEnum && t.Name == "Hotkey");
+            int reverse = Convert.ToInt32(hotkey.Fields.Single(f => f.Name == "ReverseHighlight").Constant);
+            var creatures = module.GetType("eg0").Methods.Where(m => m.HasBody && m.Body.Instructions.Any(i => i.OpCode == OpCodes.Ldstr && (string)i.Operand == "Outline")).ToList();
+            Expect("creature outline builders", creatures.Count, 1);
+            var build = creatures[0];
+            var keyChecks = build.Body.Instructions.Where(i => i.Operand is MethodReference r && r.Name == "IsKeyDown"
+                && i.Previous.Operand is MethodReference k && k.DeclaringType.Name == "d1o" && Constant(i.Previous.Previous) == reverse).ToList();
+            Expect("outline reverse-highlight checks", keyChecks.Count, 1);
+            var buildIl = build.Body.GetILProcessor();
+            // The input check (mv.w) right before the outline is built: through ShowCovered.Interactive.
+            var outlineName = build.Body.Instructions.First(i => i.OpCode == OpCodes.Ldstr && (string)i.Operand == "Outline");
+            var inputCheck = outlineName.Previous;
+            while (inputCheck != null && !(inputCheck.OpCode == OpCodes.Ldfld && ((FieldReference)inputCheck.Operand).Name == "w" && ((FieldReference)inputCheck.Operand).DeclaringType.Name == "mv")) inputCheck = inputCheck.Previous;
+            if (inputCheck == null) throw new Exception("this game version isn't supported (outline input check)");
+            buildIl.InsertAfter(inputCheck, Instruction.Create(OpCodes.Call, hook("ShowCovered", "Interactive")));
+            buildIl.InsertAfter(keyChecks[0], Instruction.Create(OpCodes.Call, hook("ShowCovered", "Reverse")));
+            var add = keyChecks[0].Next;
+            Func<Instruction, bool> isAdd = i => { var r = i.Operand as MethodReference; return r != null && r.DeclaringType.Name == "bym" && r.Name == "a" && r.Parameters.Count == 1 && r.Parameters[0].ParameterType.Name == "a2f"; };
+            while (add != null && !isAdd(add)) add = add.Next;
+            if (add == null || ((MethodReference)add.Operand).ReturnType.MetadataType != MetadataType.Void) throw new Exception("this game version isn't supported (outline layer add)");
+            add.OpCode = OpCodes.Call; add.Operand = hook("ShowCovered", "Add");
+
+            var view = module.GetType("a7m");
+            var drawLayer = view.Methods.Single(m => m.Name == "a" && !m.IsStatic && m.Parameters.Count == 4 && m.Parameters[0].ParameterType.Name == "cp9"
+                && m.Parameters[1].ParameterType.Name == "a2f" && m.Parameters[2].ParameterType.MetadataType == MetadataType.Boolean && m.Parameters[3].ParameterType.Name == "bkx");
+            var drawIl = drawLayer.Body.GetILProcessor();
+            var drawStart = drawLayer.Body.Instructions[0];
+            drawIl.InsertBefore(drawStart, Instruction.Create(OpCodes.Ldarg_0));
+            drawIl.InsertBefore(drawStart, Instruction.Create(OpCodes.Ldarg_1));
+            drawIl.InsertBefore(drawStart, Instruction.Create(OpCodes.Ldarg_2));
+            drawIl.InsertBefore(drawStart, Instruction.Create(OpCodes.Ldarg_3));
+            drawIl.InsertBefore(drawStart, Instruction.Create(OpCodes.Call, hook("ShowCovered", "Drawn")));
+            // The world pass ends its loop with GraphicsDevice.SetRenderTarget(null): the keyhole puts its front target back first.
+            var resets = view.Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions.Where(i => i.Operand is MethodReference r && r.Name == "SetRenderTarget"
+                && i.Previous.OpCode == OpCodes.Ldnull && i.Previous.Previous.OpCode == OpCodes.Ldfld && ((FieldReference)i.Previous.Previous.Operand).Name == "c"
+                && ((FieldReference)i.Previous.Previous.Operand).DeclaringType.Name == "cp9").Select(i => new { m, i })).ToList();
+            Expect("world pass target resets", resets.Count, 1);
+            {
+                var loadContext = resets[0].i.Previous.Previous.Previous;
+                var resetIl = resets[0].m.Body.GetILProcessor();
+                resetIl.InsertBefore(loadContext, Instruction.Create(OpCodes.Ldarg_0));
+                if (!loadContext.OpCode.Name.StartsWith("ldarg")) throw new Exception("this game version isn't supported (world pass target reset)");
+                resetIl.InsertBefore(loadContext, loadContext.Operand is ParameterDefinition p ? Instruction.Create(loadContext.OpCode, p) : Instruction.Create(loadContext.OpCode));
+                resetIl.InsertBefore(loadContext, Instruction.Create(OpCodes.Call, hook("ShowCovered", "WorldDone")));
+            }
+            var pass = view.Methods.Single(m => m.Name == "b" && !m.IsStatic && m.Parameters.Count == 1 && m.Parameters[0].ParameterType.Name == "cp9" && m.ReturnType.MetadataType == MetadataType.Void);
+            var passIl = pass.Body.GetILProcessor();
+            var passStart = pass.Body.Instructions[0];
+            passIl.InsertBefore(passStart, Instruction.Create(OpCodes.Ldarg_0));
+            passIl.InsertBefore(passStart, Instruction.Create(OpCodes.Call, hook("ShowCovered", "BeforePass")));
+            foreach (var ret in pass.Body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList())
+            {
+                // As in AppendCall: the first inserted instruction takes the ret's place.
+                passIl.InsertAfter(ret, Instruction.Create(OpCodes.Ret));
+                passIl.InsertAfter(ret, Instruction.Create(OpCodes.Call, hook("ShowCovered", "AfterPass")));
+                passIl.InsertAfter(ret, Instruction.Create(OpCodes.Ldarg_1));
+                ret.OpCode = OpCodes.Ldarg_0; ret.Operand = null;
+            }
+        }
+
         Expect("SpriteBatch.Begin calls", begins, 2);
         Expect("scissor rectangle reads/writes", scissors, 11);
         Expect("Mouse.GetState calls", mice, 7);
@@ -560,6 +623,15 @@ static class Patcher
             }
         }
         throw new Exception("no CLI header");
+    }
+
+    // The int an ldc.i4* instruction loads, or null.
+    static int? Constant(Instruction i)
+    {
+        if (i == null) return null;
+        if (i.OpCode == OpCodes.Ldc_I4 || i.OpCode == OpCodes.Ldc_I4_S) return Convert.ToInt32(i.Operand);
+        int n = i.OpCode.Code - Code.Ldc_I4_0;
+        return n >= 0 && n <= 8 ? n : (int?)null;
     }
 
     static int Coff(byte[] pe) { return BitConverter.ToInt32(pe, 0x3C) + 4 + 18; }

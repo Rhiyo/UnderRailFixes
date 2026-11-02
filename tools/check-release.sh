@@ -43,6 +43,13 @@ ResolutionStore.Load
 ResolutionStore.Save
 SaveScreenshot.Limit
 SaveScreenshot.Shrink
+ShowCovered.Add
+ShowCovered.AfterPass
+ShowCovered.BeforePass
+ShowCovered.Drawn
+ShowCovered.Interactive
+ShowCovered.Reverse
+ShowCovered.WorldDone
 UiScaleFix.BackgroundDraw
 UiScaleFix.BackgroundPlace
 UiScaleFix.BackgroundSize

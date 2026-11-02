@@ -288,7 +288,7 @@ public static class UnderrailDropdownScroll
     static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
     static long lastWheel = -1000;
     // Point is FNA's type behind the XNA facade, so it is only touched through reflection.
-    static readonly PropertyInfo LocationProp = typeof(euz).GetProperty("Location");
+    internal static readonly PropertyInfo LocationProp = typeof(euz).GetProperty("Location");
     static readonly MethodInfo AbsoluteMethod = typeof(euz).GetMethod("at", Type.EmptyTypes);
     static readonly FieldInfo ClosedSize = typeof(aw9).GetFields(BindingFlags.Instance | BindingFlags.NonPublic).Single(f => f.FieldType == typeof(esj));
     static readonly FieldInfo TextOffset = typeof(aw9).GetFields(BindingFlags.Instance | BindingFlags.NonPublic).Single(f => f.FieldType == typeof(int));
@@ -297,14 +297,14 @@ public static class UnderrailDropdownScroll
     // esj's fields share names with its methods, and euz.g has an overload taking Point, so go through reflection.
     static readonly FieldInfo SizeW = typeof(esj).GetField("c"), SizeH = typeof(esj).GetField("d");
     static readonly MethodInfo AddMethod = typeof(euz).GetMethod("aox", new[] { typeof(euz) }), RemoveMethod = typeof(euz).GetMethod("g", new[] { typeof(euz) });
-    static int W(esj s) { return (int)SizeW.GetValue(s); }
-    static int H(esj s) { return (int)SizeH.GetValue(s); }
-    static void Add(euz parent, euz child) { AddMethod.Invoke(parent, new object[] { child }); }
-    static void Remove(euz parent, euz child) { RemoveMethod.Invoke(parent, new object[] { child }); }
-    static int X(object point) { return (int)point.GetType().GetField("X").GetValue(point); }
-    static int Y(object point) { return (int)point.GetType().GetField("Y").GetValue(point); }
+    internal static int W(esj s) { return (int)SizeW.GetValue(s); }
+    internal static int H(esj s) { return (int)SizeH.GetValue(s); }
+    internal static void Add(euz parent, euz child) { AddMethod.Invoke(parent, new object[] { child }); }
+    internal static void Remove(euz parent, euz child) { RemoveMethod.Invoke(parent, new object[] { child }); }
+    internal static int X(object point) { return (int)point.GetType().GetField("X").GetValue(point); }
+    internal static int Y(object point) { return (int)point.GetType().GetField("Y").GetValue(point); }
     static object At(euz c) { return AbsoluteMethod.Invoke(c, null); }
-    static void Move(euz c, int x, int y) { LocationProp.SetValue(c, Activator.CreateInstance(LocationProp.PropertyType, x, y), null); }
+    internal static void Move(euz c, int x, int y) { LocationProp.SetValue(c, Activator.CreateInstance(LocationProp.PropertyType, x, y), null); }
 
     static int ScreenHeight(euz c)
     {
@@ -353,13 +353,36 @@ public static class UnderrailDropdownScroll
         {
             var rows = box.Controls.OfType<zt>().ToList();
             if (rows.Count == 0) return;
+            ToFront(box);
             esj closed = (esj)ClosedSize.GetValue(box);
             int textOffset = (int)TextOffset.GetValue(box);
             int step = H(closed) - 2, top = H(closed) + 2;
             int bottom = Bottom(box);
             int room = bottom - Y(At(box)) - top - textOffset - Margin;
             int visible = Math.Max(3, room / Math.Max(1, step));
-            Log.Write($"dropdown opened: {rows.Count} rows, box y {Y(At(box))}, limit y {bottom}, fits {visible}");
+            // Not enough room below: open upwards (the whole open box moves up so it ends where the closed one did; the
+            // game always draws the chosen value at the top), if there's more room there. Moved back on close.
+            int roomUp = Y(At(box)) + H(closed) - TopLimit(box) - top - textOffset - Margin;
+            int visibleUp = Math.Max(3, roomUp / Math.Max(1, step));
+            // Decided on the real room (the 3-row minimum is for how many rows a scrolling list shows).
+            int fitBelow = Math.Max(0, room / Math.Max(1, step)), fitUp = Math.Max(0, roomUp / Math.Max(1, step));
+            bool up = rows.Count > fitBelow && fitUp > fitBelow;
+            if (up) visible = visibleUp;
+            Log.Write($"dropdown opened: {rows.Count} rows, box y {Y(At(box))}, limit y {bottom}, fits {visible}{(up ? " (upwards)" : "")}");
+            if (up)
+            {
+                // The box moves up by the list's height; its header (the chosen value, a child button at the top) moves
+                // to the bottom, where the closed box was, and the rows go above it.
+                object location = LocationProp.GetValue(box, null);
+                Raised.Remove(box);
+                Raised.Add(box, location);
+                int open = H(closed) + textOffset + Math.Min(rows.Count, visible) * step;
+                Move(box, X(location), Y(location) - (open - H(closed)));
+                var header = Header.GetValue(box) as euz;
+                if (header != null) Move(header, 0, open - H(closed));
+                foreach (var r in rows) { object at = LocationProp.GetValue(r, null); Move(r, X(at), Y(at) - H(closed)); }
+                top = 2;
+            }
             if (rows.Count <= visible) return;
 
             wj theme = wj.a();
@@ -403,11 +426,49 @@ public static class UnderrailDropdownScroll
         }
     }
 
+    // An open dropdown drawn over everything around it: last in its parent's list of controls (euz.p, drawn in order,
+    // changed under the parent's own lock as euz.aox does).
+    static readonly FieldInfo Children = typeof(euz).GetField("p", BindingFlags.Instance | BindingFlags.NonPublic),
+        ChildrenLock = typeof(euz).GetField("q", BindingFlags.Instance | BindingFlags.NonPublic);
+    static void ToFront(euz c)
+    {
+        var parent = c.Parent;
+        var list = parent == null ? null : Children.GetValue(parent) as List<euz>;
+        var gate = parent == null ? null : ChildrenLock.GetValue(parent) as System.Threading.ReaderWriterLock;
+        if (list == null || gate == null) return;
+        gate.AcquireWriterLock(-1);
+        try { if (list.Remove(c)) list.Add(c); }
+        finally { gate.ReleaseWriterLock(); }
+    }
+
     // Called at the end of aw9's "close" method, which only removes the rows itself.
     public static void Closed(aw9 box)
     {
         State s;
         if (States.TryGetValue(box, out s)) RemoveBar(box, s);
+        object location;
+        if (Raised.TryGetValue(box, out location))
+        {
+            Raised.Remove(box);
+            LocationProp.SetValue(box, location, null);
+            var header = Header.GetValue(box) as euz;
+            if (header != null) Move(header, 0, 0);
+        }
+    }
+
+    // aw9's header: the button showing the chosen value (its only dak field).
+    static readonly FieldInfo Header = typeof(aw9).GetFields(BindingFlags.Instance | BindingFlags.NonPublic).Single(f => f.FieldType == typeof(dak));
+
+    // Dropdowns opened upwards: where they were (a boxed Point).
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<aw9, object> Raised = new System.Runtime.CompilerServices.ConditionalWeakTable<aw9, object>();
+
+    // Highest y an open list may reach: the top of its tab page (or the screen).
+    static int TopLimit(aw9 box)
+    {
+        int top = 0;
+        for (euz a = box.Parent; a != null; a = a.Parent)
+            if (a is cvh || a is dpg) top = Math.Max(top, Y(At(a)));
+        return top;
     }
 
     static void RemoveBar(aw9 box, State s)

@@ -5,7 +5,7 @@ Notes for whoever (person or AI agent) works on this next. The game's title is s
 
 ## What it is
 
-Display fixes for UnderRail (Styg, Steam app 250520), distributed as a **patcher**: it backs up the player's own
+Display and quality-of-life fixes for UnderRail (Styg, Steam app 250520), distributed as a **patcher**: it backs up the player's own
 `underrail.exe` to `underrail.exe.backup` and patches it in place (Mono.Cecil) to call `UnderrailFix.dll`, which
 holds all the fix logic. No launch options, no other game files touched, `--uninstall` restores the backup.
 Every fix is switched at runtime from `UnderrailFix.ini`, so toggling never needs a re-patch.
@@ -21,10 +21,14 @@ Fixes (README.md has the player-facing description):
 | DPI | `DpiAware` | Windows only: per-monitor DPI awareness before the window exists |
 | Window icon | `WindowIcon` | WM_SETICON with the exe's icon (resource 32512, 64 + 32 px): FNA's SDL window has none, and Wine's Wayland driver (unlike X11) doesn't fall back to the exe's icon |
 | Frame rate | `FrameRateFix` (**default off**: not tested thoroughly), `MaxFps` | no fixed 60 Hz timestep (0) or a fixed one at MaxFps |
+| Gameplay: Occluded characters | `GameplayFixes`; `ShowCovered` (**default off**), `ShowCoveredPlayer/Hostile/Other` (off, keyhole, lines, dither, fill, outline), `ShowCoveredTransparency`, `KeyholeTransparency`, `KeyholeSize` | characters hidden behind scenery shown where hidden (ShowCovered.cs); see "World drawing" below |
 | Log | `Log` | 0 (default) = no log file; 1 = `UnderrailFix.log` |
 
-In game: **Options -> Fixes** tab with a group per enabled fix; applies on Accept; scale/inset changes get a
-15 s keep/revert countdown (the game's own dialog).
+In game: **Options -> Fixes** tab with a group per enabled fix (Gameplay has the subsection Occluded Characters, its
+heading and labels indented, with a Reset to recommended button beside the heading); applies on Accept; scale/inset
+changes get a 15 s keep/revert countdown (the game's own dialog). Dropdowns for named choices, the game's tick boxes for
+on/off, the game's sliders for amounts (snapping to steps: 25 for zoom, 5 for the rest). The tab is one column and
+scrolls above Accept/Cancel (TabScroll); long or low dropdowns open upwards (UnderrailDropdownScroll).
 
 **How fixes are organised (keep to this when adding one):**
 - Fixes come in groups (Resolution, Interface, Zoom, Frame rate...). Every group has one on/off switch in the ini
@@ -172,6 +176,46 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 - Interface sizes are hand-made per tier: atlases `gui/ui_s|l|h_gen1`, cursors `cursors_s|l|h`, bitmap fonts in
   `data/fonts`, ~330 lines of pixel layout per tier in `wj`. No continuous scale exists in the game.
 
+### World drawing (Show Covered, the keyhole)
+
+- `a7m`'s world pass: `iu(cp9, ...)` starts the world batch (`mv.iu`: `drl` with the lighting shader, LocaleOmniShader
+  or the night-vision/camera ones; plain bc2 batch without Advanced shaders), then tiles in isometric order with the
+  entities on them (`vp`), each layer through `a7m.a(cp9, a2f, bool shaderPass, bkx)` -> `a2f.f3` -> `chf.avw`. So
+  whatever is drawn after a creature is in front of it. After the loop: `cp9.a()` (end), `SetRenderTarget(null)`,
+  then `a7m.b(cp9)`: layers with their own shader (`a2f.u`, e.g. "Outline") collected in `a7m.x` and drawn after the
+  world, which is why Tab outlines show through walls.
+- `cp9`: `b` the plain SpriteBatch, `f` bc2 (wraps it), `g` an override batch (the world's drl while set); `b()` is
+  `g ?? f`; `a()` ends the active one; `a(RasterizerState)` begins the plain one; `a(ob)` sets g.
+- `a2f` (a layer): `m` where it is drawn (layout units), `c` its part of the texture, `d` its texture source (`chf`;
+  `by8` = a layered character composited into a cached render target, rebuilt on demand, `e4m` = a plain sprite),
+  `e` tint, `i` rotation, `k` flip, `n` its owner `bym` (`n.b` the entity), `a` its id ("SHD" shadow, "marker",
+  "shield"...), `q` the fade flag (`f6.f4` multiplies by Unobscuration alpha), `u` shader name, `v` shader params
+  ("OutlineColor"). `a2f.f5` copies drop `u`/`v`/`n`.
+- Entities `b0b`: `f` IsFloor, `g` IsGround (drawn in the same order as everything else: many floor tiles around a
+  character come **after** it). Walls, props and creatures are all `c5x`; characters are the ones with the `amc`
+  aspect (`amc.aa()` -> `efk`). `c5x.IsPlayer`. Attitude: `efk.a(cnk.aqu().ac(), asp.a)` -> `h`: a hostile (red),
+  b unfriendly (orange), c neutral (grey), d friendly (green), e ally (blue) (`adi.ae`); `efk.Passive`.
+- Creature outlines (`eg0`, the method with ldstr "Outline"): built only when the view takes input (`mv.w`, off during
+  zone transitions), Character Outlines isn't Never, and (combat + Always in combat) or hovered or Tab / reverse
+  highlight held; colour white for the player/hovered, `adi.ae[attitude]` otherwise. The layer goes into the
+  creature's `bym` with `bym.a(a2f)`.
+- The world view's zoom: `dnn.y` (a field that shares its name). Unobscuration alpha: `cnk.aq1().b().i()`.
+- Render targets: `by8` caches save and restore the current target and restart the world batch with `iu` (the
+  keyhole switches targets the same way). **FNA clears a RenderTargetUsage.DiscardContents target whenever it is set
+  again**: anything switched away from and back to must be PreserveContents.
+
+### Options window (t1)
+
+- Rows: `a(label, control, extra, centre, wide, offset, tag)` (dropdown rows use wide labels: control at 2.5 x the label
+  width, else 1 x); heading `a(string)`; separator `a(bool)`; slider `a(key, label, value 0-1, min, max, small, large,
+  percent, changed, text, wide)` into `t1.a9[key]` (`oz`, `l()` value, `e(int)` set, `f(handler)` changed); tick box
+  `b(bool)` -> `cao` (`Checked`); button style `static a(dak, wj)`; `dak.c(handler)` click, `e4z.j(button)` its sound.
+  A new column starts when a row passes the page bottom (`r + h > s.Size.d - m_d`), so our page is made tall while
+  building. Cancel is `t1.ac`, Accept `t1.ab`, both laid over the tab area's bottom.
+- Dropdown `aw9`: `a()` opens (rows `zt` below its header), `b()` closes; header = its `dak` field (child at 0,0).
+  Controls draw in their parent's list order (`euz.p`, guarded by `euz.q`); text labels `avo`/`d7w` (`d7w.g()` font
+  name; fonts via `dr3.a().GetResource<SpriteFont>(name)`).
+
 ### Timing
 
 - The game never sets `IsFixedTimeStep`/`TargetElapsedTime`, so XNA's default fixed 1/60 s caps it at 60 FPS. Its
@@ -219,6 +263,10 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 | `bg1.iv` first Rectangle (draw target) | `BackgroundDraw` | the picture moves, not the control: the main menu panel is a **child** of the background |
 | end of `t1.h` / `t1.d` / `d6f.a(ls)` | `UnderrailOptions.AddTab/Save/Applied` | Fixes tab, save, live apply + confirm |
 | `tb.Draw` `ldc.i4 2048` (x2), `stfld x` | `SaveScreenshot.Limit` / `Shrink` | save screenshot rendered full size, then the 1080p view (the stock code crops to the top-left 2048 px) |
+| `eg0` creature outline: the `mv.w` read, the reverse-highlight `IsKeyDown`, the `bym.a(outline)` | `ShowCovered.Interactive` / `Reverse` / `Add` | outline layers built for every creature Tab would outline (and during transitions), marked as ours |
+| start of `a7m.a(cp9, a2f, bool, bkx)` | `ShowCovered.Drawn` | world layers in drawing order; the keyhole's split and snapshots |
+| `a7m`'s `SetRenderTarget(null)` after the world loop | `ShowCovered.WorldDone` | keyhole holes, then the front target back on screen |
+| start / end of `a7m.b(cp9)` (shader pass) | `ShowCovered.BeforePass` / `AfterPass` | our outlines out of the game's pass; fills/outlines on the hidden part after it |
 
 64-bit patcher only (`Patch64`):
 
@@ -265,6 +313,16 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
   Mono can't load .NET config ("Couldn't impersonate token"), which killed the game at its first `Trace.WriteLine`
   (`FnaMode.DiagnosticsSettings` works around it); outside the container it worked. The game's console output from
   a Steam launch ends up in `~/.local/share/Steam/logs/console-linux.txt`.
+- **Walls and props are `c5x` like creatures**: anything per-character must check for the `amc` aspect (once every
+  wall counted as a keyhole target: 1,128 "targets" a frame).
+- **Floor tiles are drawn after characters** in the world order: anything that cuts "what's drawn after the character"
+  must keep floors (`b0b.IsFloor`/`IsGround`) out of it, or holes show black.
+- **Don't redraw characters**: their `by8` composite rebuilds its cached render target on every draw; the keyhole copies
+  the front target instead (that was massive lag with two keyholes).
+- **The game's static helpers**: `GetMethod` with `BindingFlags.Instance | NonPublic` misses static ones (`t1.a(dak,
+  wj)`); a null MethodInfo there silently dropped the rest of the Gameplay rows.
+- More field/method name clashes, read by reflection: `b0b.ac`/`ad` (scale), `a2f.a` (id), `dnn.y` (zoom),
+  `bym.a`; mcs crashes (CS0584) or picks wrongly on some of them.
 - The test copy and the Steam game share one Proton prefix, so **a test build writes the player's real config.dat
   and saves**. Check what a change writes before testing it there (see the rule on files the game writes).
 
@@ -280,8 +338,11 @@ update, run the patcher on a copy first: an `Expect` failure names the patch poi
 - Other resolutions: `tools/gamescope-test.sh 7680 4320` (8K), `3840 2160`, `2160 3840` (portrait). Compare
   screenshots: 4K and 8K should look identical.
 - Done: 5120x1440 native, 4K and 8K (UI 200%, right-drag fixed), insets (floor clicks, edge clicks, Escape dim),
-  options tab basics, keep/revert countdown, zoom steps (wheel and buttons equal).
-- Not yet: the Frame rate cap dropdown in game, the latest background change in game (picture drawn full-screen/letterboxed while the main menu's
+  options tab basics, keep/revert countdown, zoom steps (wheel and buttons equal), save screenshots (1080p view),
+  window icon under Wayland, Occluded characters in the 64-bit build under Proton (all effects, keyholes for several
+  characters, transitions, Tab), the Fixes tab's sliders/tick boxes/scrolling/upward dropdowns.
+- Not yet: Occluded characters in the 32-bit build (XNA on Windows: the keyhole's render targets and blend states
+  are plain Reach features, but untested), its performance with many keyholes on a slower GPU, the Frame rate cap dropdown in game, the latest background change in game (picture drawn full-screen/letterboxed while the main menu's
   panel stays inset), portrait, the Windows patcher and `DpiAware` on real Windows, the keep/revert countdown in all paths,
   older glibc distros for the Linux patcher.
 

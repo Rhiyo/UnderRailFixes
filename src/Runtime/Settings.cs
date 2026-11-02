@@ -68,6 +68,27 @@ UiInsetY=0
 ; 1 = show the whole image, as large as fits, never stretched. Either way they ignore the insets.
 BackgroundFit=0
 
+; 1 = the gameplay fixes below; 0 = the game's own behaviour for all of them (and no Gameplay section in
+; Options -> Fixes).
+GameplayFixes=1
+
+; Occluded characters. With GameplayFixes=1: 1 = characters behind walls or other scenery are shown where they're hidden, as chosen
+; below for the player, hostile characters (hostile and unfriendly) and every other character. Follows the game's
+; Character Outlines option: none with ""Never"". Off by default.
+ShowCovered=0
+; For each: off; keyhole = a round see-through hole in whatever stands in front of them (as Neverwinter Nights: EE's
+; keyholing); lines = the covered part in the colour holding Tab gives them, as horizontal lines; dither = the same as
+; spaced-out dots; fill = the same, solid; outline = the outline holding Tab draws, on the covered part.
+ShowCoveredPlayer=keyhole
+ShowCoveredHostile=lines
+ShowCoveredOther=lines
+; How see-through the lines, dots, fill and outline are, in percent (0 = solid, 100 = invisible).
+ShowCoveredTransparency=75
+; How see-through the keyhole is at its centre, in percent, and its size in percent of the default (about the
+; character's height).
+KeyholeTransparency=75
+KeyholeSize=100
+
 ; Windows only: 1 = tell Windows the game handles high-DPI screens itself, so display scaling (e.g. 150% or 200%
 ; in Windows' display settings) doesn't stretch it or hide part of the resolution. 0 = Windows' default behaviour.
 DpiAware=1
@@ -167,6 +188,30 @@ Log=0
     public static string UiInsetX => Get("UiInsetX");
     public static string UiInsetY => Get("UiInsetY");
     public static bool DpiAware => Flag("DpiAware");
+    public static bool GameplayFixes => Flag("GameplayFixes");
+    public static bool ShowCovered => GameplayFixes && Get("ShowCovered") == "1";     // off unless set
+    public enum CoveredEffect { Off, Keyhole, Lines, Dither, Fill, Outline }
+    public static CoveredEffect CoveredPlayer => Effect("ShowCoveredPlayer", CoveredEffect.Keyhole);
+    public static CoveredEffect CoveredHostile => Effect("ShowCoveredHostile", CoveredEffect.Lines);
+    public static CoveredEffect CoveredOther => Effect("ShowCoveredOther", CoveredEffect.Lines);
+    public static bool AnyKeyhole => CoveredPlayer == CoveredEffect.Keyhole || CoveredHostile == CoveredEffect.Keyhole || CoveredOther == CoveredEffect.Keyhole;
+    static CoveredEffect Effect(string key, CoveredEffect fallback)
+    {
+        switch ((Get(key) ?? "").Trim().ToLowerInvariant())
+        {
+            case "off": case "0": return CoveredEffect.Off;
+            case "keyhole": return CoveredEffect.Keyhole;
+            case "lines": return CoveredEffect.Lines;
+            case "dither": return CoveredEffect.Dither;
+            case "fill": return CoveredEffect.Fill;
+            case "outline": return CoveredEffect.Outline;
+            default: return fallback;
+        }
+    }
+    static int Percent(string key, int fallback, int min, int max) { int n; return int.TryParse((Get(key) ?? "").TrimEnd('%', ' '), out n) ? Math.Max(min, Math.Min(max, n)) : fallback; }
+    public static int KeyholeTransparency => Percent("KeyholeTransparency", 75, 0, 100);
+    public static int KeyholeSize => Percent("KeyholeSize", 100, 25, 300);
+    public static int ShowCoveredTransparency => Percent("ShowCoveredTransparency", 75, 0, 100);
     public static bool WindowIcon => Flag("WindowIcon");
     public static bool FrameRateFix { get { string v = Get("FrameRateFix"); return v == "1" || string.Equals(v, "on", StringComparison.OrdinalIgnoreCase) || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase); } }     // off unless set (not tested thoroughly)
     public static int MaxFps => Number("MaxFps") ?? 0;
