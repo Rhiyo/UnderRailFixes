@@ -9,7 +9,6 @@ Display and quality-of-life fixes for UnderRail, for ultrawide and other resolut
 - **Frame rate (off by default, not tested thoroughly yet):** no more 60 FPS cap; runs at your monitor's refresh rate, with an optional cap.
 - **Menu backgrounds:** optionally show the whole menu art instead of the game's crop.
 - **Occluded characters (off by default):** characters hidden behind walls and other scenery are shown, with a see-through keyhole, a line or dot pattern, a fill or an outline, chosen separately for you, hostile characters and everyone else. See [below](#occluded-characters).
-- **Window icon:** the game window gets its icon under Proton too.
 - **In-game settings:** an **Options → Fixes** tab; changes apply without restarting.
 - **Experimental 64-bit** (separate download): runs the game as a 64-bit process. See [below](#experimental-64-bit).
 
@@ -153,10 +152,6 @@ It follows the game's own rules for outlines: it shows the characters holding Ta
 ### Windows display scaling
 
 XNA games don't tell Windows they can handle high-DPI screens, so with display scaling on (e.g. 150% in Windows' display settings) Windows may stretch the game or report a smaller resolution. `DpiAware=1` (the default) fixes that. It has no effect on Linux/Proton, which doesn't need it.
-
-### Window icon
-
-Under Proton the game window has no icon of its own, so the task bar shows a generic one (always with Wine's Wayland driver, e.g. `PROTON_ENABLE_WAYLAND=1`). `WindowIcon=1` (the default) gives the window the game's own icon. On Windows the window already has it, so nothing changes there.
 
 ## Experimental 64-bit
 
