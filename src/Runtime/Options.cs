@@ -434,7 +434,7 @@ static class TabScroll
     static readonly FieldInfo Accept = typeof(t1).GetField("ac", BindingFlags.Instance | BindingFlags.NonPublic), Tabs = typeof(t1).GetField("u", BindingFlags.Instance | BindingFlags.NonPublic);
     static readonly FieldInfo BarSize = typeof(wj).GetField("bm");
     static readonly PropertyInfo Location = typeof(euz).GetProperty("Location");
-    static readonly MethodInfo Close = typeof(aw9).GetMethod("b", Type.EmptyTypes);     // aw9.b() closes the list (overloads take XNA types)
+    static readonly MethodInfo Close = typeof(aw9).GetMethod("b", BindingFlags.Instance | BindingFlags.NonPublic, null, Type.EmptyTypes, null);     // aw9.b() (private) closes the list
     static int Top(euz c) { return UnderrailDropdownScroll.Y(Location.GetValue(c, null)); }
 
     public static void Attach(t1 options, cvh page)

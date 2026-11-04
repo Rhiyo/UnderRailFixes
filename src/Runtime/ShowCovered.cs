@@ -304,7 +304,7 @@ public static class ShowCovered
     static readonly FieldInfo ZoomField = typeof(dnn).GetField("y");     // the world view's zoom (shares its name with a method)
     static readonly FieldInfo Device = typeof(cp9).GetField("c"), Placed = typeof(a2f).GetField("m"), Part = typeof(a2f).GetField("c"),
         Tint = typeof(a2f).GetField("e"), Rotation = typeof(a2f).GetField("i"), Flip = typeof(a2f).GetField("k"),
-        Resources = typeof(cp9).GetField("a"), Clip = typeof(a7m).GetField("aq", Any),
+        Resources = typeof(cp9).GetField("a"), Clip = typeof(a7m).GetField("aq", BindingFlags.Static | BindingFlags.NonPublic),     // static
         ScaleX = typeof(b0b).GetField("ac"), ScaleY = typeof(b0b).GetField("ad"), LayerId = typeof(a2f).GetField("a"),     // fields share names with methods
         IsFloor = typeof(b0b).GetField("f"), IsGround = typeof(b0b).GetField("g");
     static readonly MethodInfo Resume = typeof(cp9).GetMethod("a", new[] { typeof(RasterizerState) }), End = typeof(cp9).GetMethod("a", Type.EmptyTypes),
@@ -373,7 +373,7 @@ public static class ShowCovered
         var viewport = g.Viewport;
         var scissor = g.ScissorRectangle;
         bool clipped = scissor.X != 0 || scissor.Y != 0;     // as a7m.b decides
-        var clipState = clipped ? (RasterizerState)Clip.GetValue(view) : null;
+        var clipState = clipped ? (RasterizerState)Clip.GetValue(null) : null;
 
         End.Invoke(context, null);     // end whichever batch is active, as a7m.b does before its own drawing
         try
