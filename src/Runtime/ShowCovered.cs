@@ -597,6 +597,12 @@ static class Keyhole
         ColorSourceBlend = Blend.Zero, ColorDestinationBlend = Blend.SourceAlpha,
         AlphaSourceBlend = Blend.Zero, AlphaDestinationBlend = Blend.SourceAlpha,
     };
+    // destination x source alpha (colour and alpha alike, as XNA's Reach profile needs).
+    static readonly BlendState ByAlpha = new BlendState
+    {
+        ColorSourceBlend = Blend.Zero, ColorDestinationBlend = Blend.SourceAlpha,
+        AlphaSourceBlend = Blend.Zero, AlphaDestinationBlend = Blend.SourceAlpha,
+    };
     static readonly BlendState Cut = new BlendState
     {
         ColorSourceBlend = Blend.Zero, ColorDestinationBlend = Blend.InverseSourceAlpha,
@@ -1042,14 +1048,16 @@ static class Keyhole
         }
 
         // Mask: the cover's silhouettes, four times (a sprite's soft edge pixels, alpha a, count as almost fully covered:
-        // 1 - (1 - a)^4; once, the edges of what stands in front still showed at 100%), x the hole x its fade-in.
+        // 1 - (1 - a)^4; once, the edges of what stands in front still showed at 100%), x the hole x its fade-in. Drawn
+        // with the world pass's own batch (lighting shader and transform), so each silhouette covers exactly the pixels
+        // its sprite did: a plain batch rounds positions differently, up to a game unit off, which left the very edge
+        // of walls (their top highlight) uncut at any transparency. Only the mask's alpha is used (the shader tints it).
         Into(mask, circle);
         g.Clear(Color.Transparent);
-        ob game = passContext.b();
-        ShowCovered.BeginBatch(game, SpriteSortMode.Deferred, Clipped);
+        WorldBatch(DepthStencilState.None);
         for (int n = 0; n < 4; n++)
             foreach (var layer in cover) ShowCovered.Silhouette(passContext, layer);
-        game.an();
+        End.Invoke(passContext, null);
         g.ScissorRectangle = size;
         batch.Begin(SpriteSortMode.Immediate, Multiply, SamplerState.LinearClamp, DepthStencilState.None, RasterizerState.CullNone);
         batch.Draw(Hole(g), local, Color.White * holeAlpha);
@@ -1057,7 +1065,7 @@ static class Keyhole
 
         // Behind x mask; then in the front picture: front x (1 - mask) + behind x mask (premultiplied: Cut, then Additive).
         Into(behind, circle);
-        batch.Begin(SpriteSortMode.Immediate, Multiply, SamplerState.PointClamp, DepthStencilState.None, RasterizerState.CullNone);
+        batch.Begin(SpriteSortMode.Immediate, ByAlpha, SamplerState.PointClamp, DepthStencilState.None, RasterizerState.CullNone);
         batch.Draw(mask, size, size, Color.White);
         batch.End();
         foreach (var tile in Tiles)
